@@ -7,6 +7,12 @@ jobs:
   publish:
     runs-on: ubuntu-latest
 
+    permissions:
+      packages: write
+      contents: read
+      attestations: write
+      id-token: write
+
     services:
       postgres:
         image: pgvector/pgvector:pg17-trixie
@@ -22,14 +28,8 @@ jobs:
           --health-timeout=5s
           --health-retries=5
 
-    permissions:
-      packages: write
-      contents: read
-      attestations: write
-      id-token: write
-
     env:
-      IMAGE_NAME: ${{ vars.DOCKER_REGISTRY }}/${{ vars.ORGANIZATION }}/${{ vars.DOCKER_IMAGE_NAME }}:$(date +%s)
+      IMAGE_NAME: ${{ vars.DOCKER_REGISTRY }}/${{ vars.ORGANIZATION }}/${{ vars.DOCKER_IMAGE_NAME }}:${{ github.run_id }}
 
     steps:
       - name: Checkout project sources
@@ -55,7 +55,7 @@ jobs:
       - name: Build and push Docker images with Jib
         run: |
           echo "Building image: $IMAGE_NAME"
-          ./gradlew check jib -Djib.to.image=$IMAGE_NAME
+          ./gradlew check jib --info --warning-mode=all -Djib.to.image=$IMAGE_NAME
         env:
           CI: true
           GPR_USER: ${{ secrets.GPR_USER }}
