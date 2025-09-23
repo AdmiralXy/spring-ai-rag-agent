@@ -36,6 +36,7 @@ jobs:
         with:
           distribution: 'zulu'
           java-version: '25'
+          cache: gradle
 
       - name: Run build with Gradle Wrapper
         run: ./gradlew check test bootJar --info --warning-mode=all
