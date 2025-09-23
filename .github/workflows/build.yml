@@ -12,6 +12,21 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17-trixie
+        env:
+          POSTGRES_DB: ai
+          POSTGRES_USER: aiuser
+          POSTGRES_PASSWORD: aipass
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U aiuser -d ai"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
     steps:
       - name: Checkout project sources
         uses: actions/checkout@v4
