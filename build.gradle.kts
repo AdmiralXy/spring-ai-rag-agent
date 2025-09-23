@@ -60,6 +60,19 @@ tasks.withType<Test> {
     useJUnitPlatform()
 }
 
+jib {
+    container {
+        from {
+            image = "openjdk:25-jre-alpine"
+        }
+        jvmFlags = listOf(
+            "-XX:+UseZGC",
+            "-XX:+ZGenerational"
+        )
+    }
+}
+
+
 tasks {
     generateTypeScript {
         jsonLibrary = JsonLibrary.jackson2
