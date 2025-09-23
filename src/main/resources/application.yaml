@@ -1,0 +1,46 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /api/agent
+
+app:
+  chat:
+    history-limit: 20
+    rag:
+      percentage: 30
+      max-chars: 4000
+      top-k: 100
+
+spring:
+  application:
+    name: agent
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/ai}
+    username: ${DATABASE_USERNAME:aiuser}
+    password: ${DATABASE_PASSWORD:aipass}
+  jpa:
+    open-in-view: false
+  ai:
+    vectorstore:
+      pgvector:
+        table-name: documents
+        dimensions: 1024
+    ollama:
+      base-url: ${OLLAMA_URL:http://localhost:11434}
+      embedding:
+        options:
+          model: ${OLLAMA_EMBEDDING_MODEL:mxbai-embed-large}
+      chat:
+        enabled: false
+    openai:
+      base-url: ${AI_URL:https://api.deepseek.com}
+      api-key: ${AI_KEY:API_KEY}
+      embedding:
+        enabled: false
+      chat:
+        options:
+          model: ${AI_MODEL:deepseek-chat}
+
+springdoc:
+  api-docs:
+    path: /api-docs

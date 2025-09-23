@@ -1,0 +1,29 @@
+databaseChangeLog:
+  - changeSet:
+      id: add-chat-messages-table
+      author: AdmiralXy
+      changes:
+        - createTable:
+            tableName: t_chat_messages
+            columns:
+              - column:
+                  name: c_id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: c_conversation_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_chat_messages_conversations
+                    references: t_conversations(c_id)
+              - column:
+                  name: c_role
+                  type: text
+              - column:
+                  name: c_content
+                  type: text
+              - column:
+                  name: c_created_at
+                  type: timestamp

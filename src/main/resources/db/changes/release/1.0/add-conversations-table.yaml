@@ -1,0 +1,25 @@
+databaseChangeLog:
+  - changeSet:
+      id: add-conversations-table
+      author: AdmiralXy
+      changes:
+        - createTable:
+            tableName: t_conversations
+            columns:
+              - column:
+                  name: c_id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: c_title
+                  type: text
+              - column:
+                  name: c_rag_space
+                  type: text
+              - column:
+                  name: c_created_at
+                  type: timestamp
+              - column:
+                  name: c_updated_at
+                  type: timestamp

@@ -1,0 +1,24 @@
+databaseChangeLog:
+  - changeSet:
+      id: add-documents-table
+      author: AdmiralXy
+      changes:
+        - createTable:
+            tableName: documents
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: content
+                  type: text
+              - column:
+                  name: metadata
+                  type: jsonb
+              - column:
+                  name: embedding
+                  type: vector(1024)
+        - sql:
+            sql: CREATE INDEX ON documents USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);

@@ -1,0 +1,11 @@
+databaseChangeLog:
+  - include:
+      file: db/changes/release/1.0/add-conversations-table.yaml
+  - include:
+      file: db/changes/release/1.0/add-chat-messages-table.yaml
+  - include:
+      file: db/changes/release/1.0/add-spaces-table.yaml
+  - include:
+      file: db/changes/release/1.0/add-pgvector-extension.yaml
+  - include:
+      file: db/changes/release/1.0/add-documents-table.yaml
