@@ -19,7 +19,7 @@ jobs:
       - name: Setup Gradle
         uses: actions/setup-java@v4
         with:
-          distribution: 'openjdk'
+          distribution: 'zulu'
           java-version: '25'
 
       - name: Run build with Gradle Wrapper
