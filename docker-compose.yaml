@@ -1,0 +1,33 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17-trixie
+    container_name: postgres
+    restart: always
+    environment:
+      POSTGRES_DB: ai
+      POSTGRES_USER: aiuser
+      POSTGRES_PASSWORD: aipass
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./storage/postgres:/var/lib/postgresql/data
+
+  ollama:
+    image: ollama/ollama:0.12.0
+    container_name: ollama
+    restart: always
+    ports:
+      - "11434:11434"
+    volumes:
+      - ./storage/ollama:/root/.ollama
+    deploy:
+      resources:
+        limits:
+          memory: 6g
+          cpus: "4.0"
+    entrypoint: [ "/bin/sh", "-c" ]
+    command: |
+      "ollama serve & 
+       sleep 3 && 
+       ollama pull embeddinggemma:300m && 
+       wait"
