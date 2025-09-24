@@ -67,61 +67,55 @@ public class ChatServiceImpl implements ChatService {
     @Override
     public Flux<String> send(UUID id, String text) {
         return Mono.fromCallable(() -> {
-                    var conversation = conversationRepository.findById(id)
-                            .orElseThrow(() -> new IllegalArgumentException(CONVERSATION_NOT_FOUND));
+            var conversation = conversationRepository.findById(id)
+                    .orElseThrow(() -> new IllegalArgumentException(CONVERSATION_NOT_FOUND));
 
-                    return ragService.buildContext(
-                            conversation.getRagSpace(),
-                            text,
-                            ragProperties.getPercentage(),
-                            ragProperties.getMaxChars(),
-                            ragProperties.getTopK()
+            return ragService.buildContext(
+                    conversation.getRagSpace(),
+                    text,
+                    ragProperties.getPercentage(),
+                    ragProperties.getMaxChars(),
+                    ragProperties.getTopK()
                     );
-                })
-                .subscribeOn(Schedulers.boundedElastic())
-                .flatMapMany(context -> {
-                    Flux<String> source = chatClient.prompt()
-                            .system(StringUtils.isNotBlank(context) ? SYSTEM_PROMPT.formatted(context) : StringUtils.EMPTY)
-                            .user(text)
-                            .advisors(a -> a.param(AbstractChatMemoryAdvisor.CHAT_MEMORY_CONVERSATION_ID_KEY, id))
-                            .stream()
-                            .content();
-
-                    Flux<String> shared = source.publish().autoConnect(2);
-                    StringBuilder acc = new StringBuilder();
-
-                    shared
-                            .doOnNext(acc::append)
-                            .doFinally(ignored -> {
-                                try {
-                                    String assistantText = acc.toString();
-                                    if (!assistantText.isEmpty()) {
-                                        chatMemory.add(
-                                                id.toString(),
-                                                List.of(new AssistantMessage(assistantText))
-                                        );
-                                    }
-                                } catch (Exception e) {
-                                    log.error("Failed to persist assistant message to ChatMemory for conversation {}", id, e);
-                                }
-                            })
-                            .onErrorResume(t -> Mono.empty())
-                            .subscribe();
-
-                    Flux<String> cumulative = shared
-                            .scan(new StringBuilder(), StringBuilder::append)
-                            .skip(1)
-                            .map(StringBuilder::toString);
-
-                    return cumulative.onErrorResume(t -> {
-                        String msg = t.getMessage();
-                        boolean disconnected =
-                                t instanceof IOException ||
-                                        (msg != null && msg.toLowerCase().contains("broken pipe")) ||
-                                        (msg != null && msg.toLowerCase().contains("forcibly closed"));
-                        return disconnected ? Mono.empty() : Mono.error(t);
-                    });
-                });
+        }).subscribeOn(Schedulers.boundedElastic()).flatMapMany(context -> {
+            Flux<String> source = chatClient.prompt()
+                    .system(StringUtils.isNotBlank(context) ? SYSTEM_PROMPT.formatted(context) : StringUtils.EMPTY)
+                    .user(text)
+                    .advisors(a -> a.param(AbstractChatMemoryAdvisor.CHAT_MEMORY_CONVERSATION_ID_KEY, id))
+                    .stream()
+                    .content();
+            Flux<String> shared = source.publish().autoConnect(2);
+            StringBuilder acc = new StringBuilder();
+            shared
+                    .doOnNext(acc::append)
+                    .doFinally(ignored -> {
+                        try {
+                            String assistantText = acc.toString();
+                            if (!assistantText.isEmpty()) {
+                                chatMemory.add(
+                                        id.toString(),
+                                        List.of(new AssistantMessage(assistantText))
+                                );
+                            }
+                        } catch (Exception e) {
+                            log.error("Failed to persist assistant message to ChatMemory for conversation {}", id, e);
+                        }
+                    })
+                    .onErrorResume(t -> Mono.empty())
+                    .subscribe();
+            Flux<String> cumulative = shared
+                    .scan(new StringBuilder(), StringBuilder::append)
+                    .skip(1)
+                    .map(StringBuilder::toString);
+            return cumulative.onErrorResume(t -> {
+                String msg = t.getMessage();
+                boolean disconnected =
+                        t instanceof IOException
+                                || (msg != null && msg.toLowerCase().contains("broken pipe"))
+                                || (msg != null && msg.toLowerCase().contains("forcibly closed"));
+                return disconnected ? Mono.empty() : Mono.error(t);
+            });
+        });
     }
 
 
