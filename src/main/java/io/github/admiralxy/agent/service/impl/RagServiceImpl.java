@@ -91,7 +91,6 @@ public class RagServiceImpl implements RagService {
 
     @Override
     public String buildContext(String spaceId, String query, double percentage, int maxChars, int topK) {
-
         List<Document> docs = store.similaritySearch(
                 SearchRequest.query(query)
                         .withTopK(topK)
