@@ -92,7 +92,7 @@ public class ChatServiceImpl implements ChatService {
 
                     shared
                             .doOnNext(acc::append)
-                            .doFinally(sig -> {
+                            .doFinally(ignored -> {
                                 try {
                                     String assistantText = acc.toString();
                                     if (!assistantText.isEmpty()) {
@@ -109,7 +109,7 @@ public class ChatServiceImpl implements ChatService {
                             .subscribe();
 
                     Flux<String> cumulative = shared
-                            .scan(new StringBuilder(), (sb, chunk) -> sb.append(chunk))
+                            .scan(new StringBuilder(), StringBuilder::append)
                             .skip(1)
                             .map(StringBuilder::toString);
 
