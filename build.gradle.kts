@@ -62,6 +62,7 @@ tasks.withType<Test> {
 
 jib {
     container {
+        mainClass = "io.github.admiralxy.agent.AgentApplication"
         from {
             image = "openjdk:25-jre-alpine"
         }
