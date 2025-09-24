@@ -14,8 +14,6 @@
   </a>
 </p>
 
----
-
 ## ⚙️ Tech Stack
 
 - Java 25+, Spring Boot, Spring Data JPA
@@ -23,8 +21,6 @@
 - PostgreSQL + pgvector
 - Liquibase for DB migrations
 - Docker Compose for local setup
-
----
 
 ## 🚀 Quick Start
 
@@ -49,8 +45,6 @@ Default base path:
 Swagger:
 `http://localhost:8080/api/agent/swagger-ui/index.html`
 
----
-
 ## 🔑 Configuration
 
 Environment variables (see `application.yaml`):
@@ -66,8 +60,6 @@ AI_MODEL=deepseek-chat
 OLLAMA_URL=http://localhost:11434
 OLLAMA_EMBEDDING_MODEL=mxbai-embed-large
 ```
-
----
 
 ## 📡 REST API
 
