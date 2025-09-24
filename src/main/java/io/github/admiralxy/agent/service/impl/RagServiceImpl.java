@@ -105,17 +105,22 @@ public class RagServiceImpl implements RagService {
                 .mapToInt(d -> d.getContent().length())
                 .sum();
 
-        int targetLength = Math.min(maxChars, (int) (totalLength * (percentage / 100.0)));
+        int targetLength = (int) (totalLength * (percentage / 100.0));
+        targetLength = Math.max(targetLength, maxChars / 2);
+        targetLength = Math.min(maxChars, targetLength);
 
         StringBuilder sb = new StringBuilder();
         int used = 0;
 
         for (Document doc : docs) {
-            int len = doc.getContent().length();
-            if (used + len > targetLength) {
+            String content = doc.getContent();
+            int len = content.length();
+
+            if (used > 0 && used + len > targetLength) {
                 break;
             }
-            sb.append(doc.getContent()).append(CONTENT_CONTENT_SEPARATOR);
+
+            sb.append(content).append(CONTENT_CONTENT_SEPARATOR);
             used += len;
         }
 
