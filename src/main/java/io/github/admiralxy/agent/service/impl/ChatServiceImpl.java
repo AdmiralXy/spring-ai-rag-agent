@@ -9,11 +9,13 @@ import io.github.admiralxy.agent.repository.ConversationRepository;
 import io.github.admiralxy.agent.service.ChatService;
 import io.github.admiralxy.agent.service.RagService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.AbstractChatMemoryAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
+import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -23,10 +25,12 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
+import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ChatServiceImpl implements ChatService {
@@ -63,30 +67,63 @@ public class ChatServiceImpl implements ChatService {
     @Override
     public Flux<String> send(UUID id, String text) {
         return Mono.fromCallable(() -> {
-            var conversation = conversationRepository.findById(id)
-                    .orElseThrow(() -> new IllegalArgumentException(CONVERSATION_NOT_FOUND));
+                    var conversation = conversationRepository.findById(id)
+                            .orElseThrow(() -> new IllegalArgumentException(CONVERSATION_NOT_FOUND));
 
-            return ragService.buildContext(
-                    conversation.getRagSpace(),
-                    text,
-                    ragProperties.getPercentage(),
-                    ragProperties.getMaxChars(),
-                    ragProperties.getTopK()
-            );
-        }).subscribeOn(Schedulers.boundedElastic()).flatMapMany(context -> {
-            StringBuilder acc = new StringBuilder();
-            return chatClient.prompt()
-                    .system(StringUtils.isNotBlank(context) ? SYSTEM_PROMPT.formatted(context) : StringUtils.EMPTY)
-                    .user(text)
-                    .advisors(a -> a.param(AbstractChatMemoryAdvisor.CHAT_MEMORY_CONVERSATION_ID_KEY, id))
-                    .stream()
-                    .content()
-                    .map(chunk -> {
-                        acc.append(chunk);
-                        return acc.toString();
+                    return ragService.buildContext(
+                            conversation.getRagSpace(),
+                            text,
+                            ragProperties.getPercentage(),
+                            ragProperties.getMaxChars(),
+                            ragProperties.getTopK()
+                    );
+                })
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMapMany(context -> {
+                    Flux<String> source = chatClient.prompt()
+                            .system(StringUtils.isNotBlank(context) ? SYSTEM_PROMPT.formatted(context) : StringUtils.EMPTY)
+                            .user(text)
+                            .advisors(a -> a.param(AbstractChatMemoryAdvisor.CHAT_MEMORY_CONVERSATION_ID_KEY, id))
+                            .stream()
+                            .content();
+
+                    Flux<String> shared = source.publish().autoConnect(2);
+                    StringBuilder acc = new StringBuilder();
+
+                    shared
+                            .doOnNext(acc::append)
+                            .doFinally(sig -> {
+                                try {
+                                    String assistantText = acc.toString();
+                                    if (!assistantText.isEmpty()) {
+                                        chatMemory.add(
+                                                id.toString(),
+                                                List.of(new AssistantMessage(assistantText))
+                                        );
+                                    }
+                                } catch (Exception e) {
+                                    log.error("Failed to persist assistant message to ChatMemory for conversation {}", id, e);
+                                }
+                            })
+                            .onErrorResume(t -> Mono.empty())
+                            .subscribe();
+
+                    Flux<String> cumulative = shared
+                            .scan(new StringBuilder(), (sb, chunk) -> sb.append(chunk))
+                            .skip(1)
+                            .map(StringBuilder::toString);
+
+                    return cumulative.onErrorResume(t -> {
+                        String msg = t.getMessage();
+                        boolean disconnected =
+                                t instanceof IOException ||
+                                        (msg != null && msg.toLowerCase().contains("broken pipe")) ||
+                                        (msg != null && msg.toLowerCase().contains("forcibly closed"));
+                        return disconnected ? Mono.empty() : Mono.error(t);
                     });
-        });
+                });
     }
+
 
     @Override
     public List<ChatMessage> history(UUID id) {
