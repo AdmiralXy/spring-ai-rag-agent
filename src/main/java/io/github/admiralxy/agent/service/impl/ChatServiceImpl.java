@@ -21,8 +21,11 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import reactor.core.Disposable;
+import reactor.core.publisher.ConnectableFlux;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.SignalType;
 import reactor.core.scheduler.Schedulers;
 
 import java.io.IOException;
@@ -66,58 +69,77 @@ public class ChatServiceImpl implements ChatService {
 
     @Override
     public Flux<String> send(UUID id, String text) {
-        return Mono.fromCallable(() -> {
-            var conversation = conversationRepository.findById(id)
-                    .orElseThrow(() -> new IllegalArgumentException(CONVERSATION_NOT_FOUND));
-
-            return ragService.buildContext(
-                    conversation.getRagSpace(),
-                    text,
-                    ragProperties.getPercentage(),
-                    ragProperties.getMaxChars(),
-                    ragProperties.getTopK()
+        return Mono.fromCallable(() ->
+                        conversationRepository.findById(id)
+                                .orElseThrow(() -> new IllegalArgumentException(CONVERSATION_NOT_FOUND))
+                )
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMapMany(conv -> {
+                    String context = ragService.buildContext(
+                            conv.getRagSpace(), text,
+                            ragProperties.getPercentage(),
+                            ragProperties.getMaxChars(),
+                            ragProperties.getTopK()
                     );
-        }).subscribeOn(Schedulers.boundedElastic()).flatMapMany(context -> {
-            Flux<String> source = chatClient.prompt()
-                    .system(StringUtils.isNotBlank(context) ? SYSTEM_PROMPT.formatted(context) : StringUtils.EMPTY)
-                    .user(text)
-                    .advisors(a -> a.param(AbstractChatMemoryAdvisor.CHAT_MEMORY_CONVERSATION_ID_KEY, id))
-                    .stream()
-                    .content();
-            Flux<String> shared = source.publish().autoConnect(2);
-            StringBuilder acc = new StringBuilder();
-            shared
-                    .doOnNext(acc::append)
-                    .doFinally(ignored -> {
-                        try {
-                            String assistantText = acc.toString();
-                            if (!assistantText.isEmpty()) {
-                                chatMemory.add(
-                                        id.toString(),
-                                        List.of(new AssistantMessage(assistantText))
-                                );
-                            }
-                        } catch (Exception e) {
-                            log.error("Failed to persist assistant message to ChatMemory for conversation {}", id, e);
-                        }
-                    })
-                    .onErrorResume(t -> Mono.empty())
-                    .subscribe();
-            Flux<String> cumulative = shared
-                    .scan(new StringBuilder(), StringBuilder::append)
-                    .skip(1)
-                    .map(StringBuilder::toString);
-            return cumulative.onErrorResume(t -> {
-                String msg = t.getMessage();
-                boolean disconnected =
-                        t instanceof IOException
-                                || (msg != null && msg.toLowerCase().contains("broken pipe"))
-                                || (msg != null && msg.toLowerCase().contains("forcibly closed"));
-                return disconnected ? Mono.empty() : Mono.error(t);
-            });
-        });
+
+                    Flux<String> source = chatClient.prompt()
+                            .system(org.apache.commons.lang3.StringUtils.isNotBlank(context)
+                                    ? SYSTEM_PROMPT.formatted(context)
+                                    : org.apache.commons.lang3.StringUtils.EMPTY)
+                            .user(text)
+                            .advisors(a -> a.param(AbstractChatMemoryAdvisor.CHAT_MEMORY_CONVERSATION_ID_KEY, id))
+                            .stream()
+                            .content();
+
+                    final StringBuilder acc = new StringBuilder();
+
+                    Flux<String> tapped = source
+                            .doOnNext(acc::append)
+                            .doOnError(e -> log.warn("LLM stream error for conversation {}", id, e))
+                            .doFinally(ignored -> {
+                                try {
+                                    String assistantText = acc.toString();
+                                    if (!assistantText.isEmpty() && !isDuplicateAssistant(id.toString(), assistantText)) {
+                                        chatMemory.add(id.toString(), java.util.List.of(new AssistantMessage(assistantText)));
+                                    }
+                                } catch (Exception ex) {
+                                    log.error("Persist assistant message failed for conversation {}", id, ex);
+                                }
+                            });
+
+                    ConnectableFlux<String> hot = tapped.replay();
+                    Disposable keeper = hot.subscribe();
+                    Disposable conn = hot.connect();
+
+                    return hot
+                            .scan(new StringBuilder(), StringBuilder::append)
+                            .skip(1)
+                            .map(StringBuilder::toString)
+                            .onErrorResume(t -> {
+                                String msg = t.getMessage();
+                                boolean disconnected =
+                                        t instanceof java.io.IOException
+                                                || (msg != null && msg.toLowerCase().contains("broken pipe"))
+                                                || (msg != null && msg.toLowerCase().contains("forcibly closed"))
+                                                || (msg != null && msg.toLowerCase().contains("clientabortexception"));
+                                return disconnected ? Mono.empty() : Mono.error(t);
+                            })
+                            .doFinally(ignored -> {});
+                });
     }
 
+    private boolean isDuplicateAssistant(String convId, String newText) {
+        try {
+            var history = chatMemory.get(convId, 1);
+            if (history == null || history.isEmpty()) {
+                return false;
+            }
+            var last = history.getLast();
+            return (last instanceof AssistantMessage am) && newText.equals(am.getContent());
+        } catch (Exception e) {
+            return false;
+        }
+    }
 
     @Override
     public List<ChatMessage> history(UUID id) {
