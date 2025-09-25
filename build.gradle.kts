@@ -67,8 +67,7 @@ jib {
             image = "azul/zulu-openjdk:25-jre"
         }
         jvmFlags = listOf(
-            "-XX:+UseZGC",
-            "-XX:+ZGenerational"
+            "-XX:+UseZGC"
         )
     }
 }
