@@ -24,7 +24,7 @@ spring:
     vectorstore:
       pgvector:
         table-name: documents
-        dimensions: 1024
+        dimensions: 768
     ollama:
       base-url: ${OLLAMA_URL:http://localhost:11434}
       embedding:

@@ -19,6 +19,6 @@ databaseChangeLog:
                   type: jsonb
               - column:
                   name: embedding
-                  type: vector(1024)
+                  type: vector(768)
         - sql:
             sql: CREATE INDEX ON documents USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);

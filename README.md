@@ -58,7 +58,7 @@ AI_KEY=your_api_key
 AI_MODEL=deepseek-chat
 
 OLLAMA_URL=http://localhost:11434
-OLLAMA_EMBEDDING_MODEL=mxbai-embed-large
+OLLAMA_EMBEDDING_MODEL=embeddinggemma:300m
 ```
 
 ## 📡 REST API
