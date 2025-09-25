@@ -29,7 +29,7 @@ spring:
       base-url: ${OLLAMA_URL:http://localhost:11434}
       embedding:
         options:
-          model: ${OLLAMA_EMBEDDING_MODEL:mxbai-embed-large}
+          model: ${OLLAMA_EMBEDDING_MODEL:embeddinggemma:300m}
       chat:
         enabled: false
     openai:
