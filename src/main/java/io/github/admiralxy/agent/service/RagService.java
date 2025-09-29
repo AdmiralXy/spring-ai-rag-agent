@@ -43,6 +43,13 @@ public interface RagService {
     List<Document> listDocuments(String spaceId, int limit);
 
     /**
+     * Delete a documents from a specific space.
+     *
+     * @param spaceId space ID
+     */
+    void deleteFromSpace(String spaceId);
+
+    /**
      * Delete a document from a specific space by its ID.
      *
      * @param spaceId space ID
@@ -58,13 +65,6 @@ public interface RagService {
      * @param chunkId chunk ID
      */
     void deleteChunkFromSpace(String spaceId, String docId, String chunkId);
-
-    /**
-     * Delete a documents from a specific space.
-     *
-     * @param spaceId space ID
-     */
-    void deleteFromSpace(String spaceId);
 
     /**
      * Build context from documents in a specific space based on a query.

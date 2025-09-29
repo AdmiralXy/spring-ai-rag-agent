@@ -87,6 +87,21 @@ public class RagServiceImpl implements RagService {
     }
 
     @Override
+    public void deleteFromSpace(String spaceId) {
+        var docs = store.similaritySearch(
+                SearchRequest.query(StringUtils.SPACE)
+                        .withTopK(Integer.MAX_VALUE)
+                        .withFilterExpression(SPACE_FILTER_EXPRESSION_TEMPLATE.formatted(spaceId))
+        );
+        if (!docs.isEmpty()) {
+            List<String> ids = docs.stream()
+                    .map(Document::getId)
+                    .toList();
+            store.delete(ids);
+        }
+    }
+
+    @Override
     public void deleteFromSpace(String spaceId, String docId) {
         var docs = store.similaritySearch(
                 SearchRequest.query(StringUtils.SPACE)
@@ -107,21 +122,6 @@ public class RagServiceImpl implements RagService {
                 SearchRequest.query(StringUtils.SPACE)
                         .withTopK(1)
                         .withFilterExpression(ID_CHUNK_SPACE_FILTER_EXPRESSION_TEMPLATE.formatted(docId, chunkId, spaceId))
-        );
-        if (!docs.isEmpty()) {
-            List<String> ids = docs.stream()
-                    .map(Document::getId)
-                    .toList();
-            store.delete(ids);
-        }
-    }
-
-    @Override
-    public void deleteFromSpace(String spaceId) {
-        var docs = store.similaritySearch(
-                SearchRequest.query(StringUtils.SPACE)
-                        .withTopK(Integer.MAX_VALUE)
-                        .withFilterExpression(SPACE_FILTER_EXPRESSION_TEMPLATE.formatted(spaceId))
         );
         if (!docs.isEmpty()) {
             List<String> ids = docs.stream()
