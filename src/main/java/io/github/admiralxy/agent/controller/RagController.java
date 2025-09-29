@@ -1,7 +1,6 @@
 package io.github.admiralxy.agent.controller;
 
 import io.github.admiralxy.agent.controller.request.chat.GetDocumentsRs;
-import io.github.admiralxy.agent.controller.request.documents.AddToSpaceRs;
 import io.github.admiralxy.agent.controller.response.documents.AddToSpaceRq;
 import io.github.admiralxy.agent.domain.RagDocument;
 import io.github.admiralxy.agent.service.RagService;
@@ -14,8 +13,11 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.io.IOException;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 @RestController
 @RequiredArgsConstructor
@@ -24,14 +26,36 @@ public class RagController {
 
     private final RagService ragService;
 
-    @PostMapping("/{space}/documents")
-    public AddToSpaceRs add(@PathVariable String space, @RequestBody AddToSpaceRq rq) {
-        return new AddToSpaceRs(ragService.add(space, rq.text()));
+    @PostMapping("/{space}/documents/stream")
+    public SseEmitter addStream(@PathVariable String space, @RequestBody AddToSpaceRq rq) {
+        SseEmitter emitter = new SseEmitter();
+        CompletableFuture.runAsync(() -> {
+            try {
+                ragService.add(space, rq.text())
+                        .doOnNext(percent -> {
+                            try {
+                                emitter.send(SseEmitter.event().data(percent));
+                            } catch (IOException e) {
+                                emitter.completeWithError(e);
+                            }
+                        })
+                        .doOnComplete(emitter::complete)
+                        .subscribe();
+            } catch (Exception e) {
+                emitter.completeWithError(e);
+            }
+        });
+        return emitter;
     }
 
     @DeleteMapping("/{space}/documents/{docId}")
     public void delete(@PathVariable String space, @PathVariable String docId) {
         ragService.deleteFromSpace(space, docId);
+    }
+
+    @DeleteMapping("/{space}/documents/{docId}/chunks/{chunkId}")
+    public void deleteChunk(@PathVariable String space, @PathVariable String docId, @PathVariable String chunkId) {
+        ragService.deleteChunkFromSpace(space, docId, chunkId);
     }
 
     @GetMapping("/{space}/search")

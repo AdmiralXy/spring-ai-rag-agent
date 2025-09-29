@@ -1,12 +1,14 @@
 package io.github.admiralxy.agent.service.impl;
 
 import io.github.admiralxy.agent.service.RagService;
+import io.github.admiralxy.agent.service.TextChunkerService;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
 
 import java.util.HashMap;
 import java.util.List;
@@ -20,23 +22,45 @@ public class RagServiceImpl implements RagService {
     private static final String CONTENT_CONTENT_SEPARATOR = "\n---\n";
 
     private static final String SPACE_FILTER_EXPRESSION_TEMPLATE = "space == '%s'";
-    private static final String ID_SPACE_FILTER_EXPRESSION_TEMPLATE = "id == '%s' && space == '%s'";
+    private static final String ID_SPACE_FILTER_EXPRESSION_TEMPLATE = "doc == '%s' && space == '%s'";
+    private static final String ID_CHUNK_SPACE_FILTER_EXPRESSION_TEMPLATE = "doc == '%s' && chunk == '%s' && space == '%s'";
 
-    private static final String ID_METADATA_KEY = "id";
+    private static final String ID_METADATA_KEY = "doc";
+    private static final String CHUNK_ID_METADATA_KEY = "chunk";
     private static final String SPACE_METADATA_KEY = "space";
+    private static final String CHUNK_NUMBER_METADATA_KEY = "number";
+    private static final String TOTAL_CHUNKS_METADATA_KEY = "total";
 
     private final VectorStore store;
+    private final TextChunkerService textChunkerService;
 
     @Override
-    public String add(String spaceId, String text) {
+    public Flux<Integer> add(String spaceId, String text) {
         String docId = UUID.randomUUID().toString();
-        Map<String, Object> meta = new HashMap<>();
-        meta.put(SPACE_METADATA_KEY, spaceId);
-        meta.put(ID_METADATA_KEY, docId);
+        Map<String, Object> meta = Map.of(
+                SPACE_METADATA_KEY, spaceId,
+                ID_METADATA_KEY, docId
+        );
 
-        Document doc = new Document(docId, text, meta);
-        store.add(List.of(doc));
-        return docId;
+        List<String> chunks = textChunkerService.chunk(text, 80, 1000, 10);
+        int total = chunks.size();
+
+        return Flux.create(sink -> {
+            for (int i = 0; i < total; i++) {
+                String chunkId = UUID.randomUUID().toString();
+                String chunk = chunks.get(i);
+                Map<String, Object> metaChunk = new HashMap<>(meta);
+                metaChunk.put(CHUNK_NUMBER_METADATA_KEY, i);
+                metaChunk.put(TOTAL_CHUNKS_METADATA_KEY, chunks.size());
+                metaChunk.put(CHUNK_ID_METADATA_KEY, chunkId);
+
+                store.add(List.of(new Document(chunkId, chunk, metaChunk)));
+
+                int percent = (int) (((i + 1) / (double) total) * 100);
+                sink.next(percent);
+            }
+            sink.complete();
+        });
     }
 
     @Override
@@ -65,20 +89,38 @@ public class RagServiceImpl implements RagService {
     @Override
     public void deleteFromSpace(String spaceId, String docId) {
         var docs = store.similaritySearch(
-                SearchRequest.query(" ")
-                        .withTopK(1)
+                SearchRequest.query(StringUtils.SPACE)
+                        .withTopK(Integer.MAX_VALUE)
                         .withFilterExpression(ID_SPACE_FILTER_EXPRESSION_TEMPLATE.formatted(docId, spaceId))
         );
         if (!docs.isEmpty()) {
-            store.delete(List.of(docId));
+            List<String> ids = docs.stream()
+                    .map(Document::getId)
+                    .toList();
+            store.delete(ids);
+        }
+    }
+
+    @Override
+    public void deleteChunkFromSpace(String spaceId, String docId, String chunkId) {
+        var docs = store.similaritySearch(
+                SearchRequest.query(StringUtils.SPACE)
+                        .withTopK(1)
+                        .withFilterExpression(ID_CHUNK_SPACE_FILTER_EXPRESSION_TEMPLATE.formatted(docId, chunkId, spaceId))
+        );
+        if (!docs.isEmpty()) {
+            List<String> ids = docs.stream()
+                    .map(Document::getId)
+                    .toList();
+            store.delete(ids);
         }
     }
 
     @Override
     public void deleteFromSpace(String spaceId) {
         var docs = store.similaritySearch(
-                SearchRequest.query(" ")
-                        .withTopK(1)
+                SearchRequest.query(StringUtils.SPACE)
+                        .withTopK(Integer.MAX_VALUE)
                         .withFilterExpression(SPACE_FILTER_EXPRESSION_TEMPLATE.formatted(spaceId))
         );
         if (!docs.isEmpty()) {

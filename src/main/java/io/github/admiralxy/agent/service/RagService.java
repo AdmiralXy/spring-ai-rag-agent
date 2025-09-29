@@ -1,6 +1,7 @@
 package io.github.admiralxy.agent.service;
 
 import org.springframework.ai.document.Document;
+import reactor.core.publisher.Flux;
 
 import java.util.List;
 
@@ -11,9 +12,9 @@ public interface RagService {
      *
      * @param spaceId space ID
      * @param text content
-     * @return document ID
+     * @return stream of percentages indicating progress
      */
-    String add(String spaceId, String text);
+    Flux<Integer> add(String spaceId, String text);
 
     /**
      * Delete a document by its ID.
@@ -48,6 +49,15 @@ public interface RagService {
      * @param docId document ID
      */
     void deleteFromSpace(String spaceId, String docId);
+
+    /**
+     * Delete a chunk of a document from a specific space.
+     *
+     * @param spaceId space ID
+     * @param docId document ID
+     * @param chunkId chunk ID
+     */
+    void deleteChunkFromSpace(String spaceId, String docId, String chunkId);
 
     /**
      * Delete a documents from a specific space.
