@@ -31,46 +31,53 @@ public class TextChunkerServiceImpl implements TextChunkerService {
         return semicolons + braces > 3;
     }
 
-    private static List<String> chunkByParagraphs(String text, int maxChars, int overlap) {
+    private static List<String> chunkByParagraphs(String text, int maxChars, int overlapWords) {
         String[] paragraphs = text.split("\\R{2,}");
         List<String> chunks = new ArrayList<>();
         StringBuilder current = new StringBuilder();
 
         for (String paragraph : paragraphs) {
             if (current.length() + paragraph.length() + 2 > maxChars) {
-                if (current.length() > 0) {
-                    addChunkWithOverlap(chunks, current.toString(), overlap, maxChars);
+                if (!current.isEmpty()) {
+                    addChunkWithWordOverlap(chunks, current.toString(), overlapWords, maxChars);
                     current.setLength(0);
                 }
             }
             current.append(paragraph).append("\n\n");
         }
 
-        if (current.length() > 0) {
-            addChunkWithOverlap(chunks, current.toString(), overlap, maxChars);
+        if (!current.isEmpty()) {
+            addChunkWithWordOverlap(chunks, current.toString(), overlapWords, maxChars);
         }
         return chunks;
     }
 
-    private static List<String> chunkByCodeBlocks(String text, int maxChars, int overlap) {
+    private static List<String> chunkByCodeBlocks(String text, int maxChars, int overlapLines) {
         String[] blocks = text.split("(?=\\b(public|private|protected|class|interface)\\b)");
         List<String> chunks = new ArrayList<>();
         StringBuilder current = new StringBuilder();
 
         for (String block : blocks) {
-            if (StringUtils.isBlank(block)) continue;
+            if (StringUtils.isBlank(block)) {
+                continue;
+            }
+
+            if (block.length() > maxChars) {
+                for (String part : splitByLines(block, maxChars)) {
+                    addChunkWithLineOverlap(chunks, part, overlapLines, maxChars);
+                }
+                continue;
+            }
 
             if (current.length() + block.length() > maxChars) {
-                if (current.length() > 0) {
-                    addChunkWithOverlap(chunks, current.toString(), overlap, maxChars);
-                    current.setLength(0);
-                }
+                addChunkWithLineOverlap(chunks, current.toString(), overlapLines, maxChars);
+                current.setLength(0);
             }
             current.append(block).append("\n");
         }
 
-        if (current.length() > 0) {
-            addChunkWithOverlap(chunks, current.toString(), overlap, maxChars);
+        if (!current.isEmpty()) {
+            addChunkWithLineOverlap(chunks, current.toString(), overlapLines, maxChars);
         }
         return chunks;
     }
@@ -85,30 +92,95 @@ public class TextChunkerServiceImpl implements TextChunkerService {
             int i = start;
             while (i < words.length) {
                 String word = words[i];
-                if (chunk.length() + word.length() + 1 > maxChars) break;
+                if (chunk.length() + word.length() + 1 > maxChars) {
+                    break;
+                }
                 chunk.append(word).append(" ");
                 i++;
             }
-            if (chunk.length() > 0) {
+            if (!chunk.isEmpty()) {
                 chunks.add(chunk.toString().trim());
             }
-            // следующий чанк начинается на overlapWords слов раньше конца
             start = Math.max(i - overlapWords, i);
-            if (start == i && i >= words.length) break;
+            if (start >= words.length) {
+                break;
+            }
         }
         return chunks;
     }
 
+    private static List<String> splitByLines(String text, int maxChars) {
+        String[] lines = text.split("\\R");
+        List<String> chunks = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
 
-    private static List<String> splitByMaxChars(String text, int maxChars) {
+        for (String line : lines) {
+            if (current.length() + line.length() + 1 > maxChars) {
+                chunks.add(current.toString().trim());
+                current.setLength(0);
+            }
+            current.append(line).append("\n");
+        }
+        if (!current.isEmpty()) {
+            chunks.add(current.toString().trim());
+        }
+        return chunks;
+    }
+
+    private static void addChunkWithLineOverlap(List<String> chunks, String chunk, int overlapLines, int maxChars) {
+        if (StringUtils.isBlank(chunk)) {
+            return;
+        }
+        if (chunk.length() > maxChars) {
+            chunks.addAll(splitByLines(chunk, maxChars));
+            return;
+        }
+
+        if (!chunks.isEmpty() && overlapLines > 0) {
+            String prev = chunks.getLast();
+            String[] prevLines = prev.split("\\R");
+            int count = Math.min(overlapLines, prevLines.length);
+
+            StringBuilder prefix = new StringBuilder();
+            for (int i = prevLines.length - count; i < prevLines.length; i++) {
+                prefix.append(prevLines[i]).append("\n");
+            }
+            chunk = (prefix + chunk).trim();
+        }
+        chunks.add(chunk.trim());
+    }
+
+    private static void addChunkWithWordOverlap(List<String> chunks, String chunk, int overlapWords, int maxChars) {
+        if (StringUtils.isBlank(chunk)) {
+            return;
+        }
+        if (chunk.length() > maxChars) {
+            chunks.addAll(splitByWords(chunk, maxChars));
+            return;
+        }
+
+        if (!chunks.isEmpty() && overlapWords > 0) {
+            String prev = chunks.getLast();
+            String[] words = prev.split("\\s+");
+            int count = Math.min(overlapWords, words.length);
+
+            StringBuilder prefix = new StringBuilder();
+            for (int i = words.length - count; i < words.length; i++) {
+                prefix.append(words[i]).append(" ");
+            }
+            chunk = (prefix + chunk).trim();
+        }
+        chunks.add(chunk.trim());
+    }
+
+    private static List<String> splitByWords(String text, int maxChars) {
         List<String> result = new ArrayList<>();
         String[] words = text.split("\\s+");
         StringBuilder current = new StringBuilder();
 
         for (String word : words) {
-            // если текущее слово само длиннее maxChars — режем жёстко
             if (word.length() > maxChars) {
-                if (current.length() > 0) {
+                if (!current.isEmpty()) {
                     result.add(current.toString().trim());
                     current.setLength(0);
                 }
@@ -121,46 +193,15 @@ public class TextChunkerServiceImpl implements TextChunkerService {
                 continue;
             }
 
-            // если слово не помещается в текущий чанк → закрываем чанк
             if (current.length() + word.length() + 1 > maxChars) {
                 result.add(current.toString().trim());
                 current.setLength(0);
             }
-
-            current.append(word).append(' ');
+            current.append(word).append(StringUtils.SPACE);
         }
-
-        if (current.length() > 0) {
+        if (!current.isEmpty()) {
             result.add(current.toString().trim());
         }
-
         return result;
-    }
-
-    private static void addChunkWithOverlap(List<String> chunks, String chunk, int overlap, int maxChars) {
-        if (StringUtils.isBlank(chunk)) return;
-
-        // если слишком длинный — режем по словам
-        if (chunk.length() > maxChars) {
-            chunks.addAll(splitByMaxChars(chunk, maxChars));
-            return;
-        }
-
-        if (!chunks.isEmpty() && overlap > 0) {
-            String prev = chunks.get(chunks.size() - 1);
-            String[] words = prev.split("\\s+");
-            int overlapWords = Math.min(overlap, words.length);
-
-            // берём последние overlap слов, а не символы
-            StringBuilder prefix = new StringBuilder();
-            for (int i = words.length - overlapWords; i < words.length; i++) {
-                prefix.append(words[i]).append(" ");
-            }
-
-            // склеиваем overlap + новый чанк
-            chunk = (prefix + chunk).trim();
-        }
-
-        chunks.add(chunk.trim());
     }
 }
