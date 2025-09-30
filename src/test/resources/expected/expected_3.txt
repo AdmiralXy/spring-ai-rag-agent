@@ -1,0 +1,175 @@
+package com.example.bigtest;
+
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.stream.*;
+
+
+public
+class HugeTestClass {
+
+
+private final Map<String, String> cache = new ConcurrentHashMap<>();
+
+private final List<String> items = new ArrayList<>();
+
+
+public HugeTestClass() {
+        for (int i = 0; i < 100; i++) {
+            items.add("Item-" + i);
+        }
+    }
+
+
+public void run() {
+        System.out.println("Running HugeTestClass with " + items.size() + " items.");
+    }
+
+
+public String computeSomething(int a, int b) {
+        return "Result=" + (a + b);
+    }
+
+
+public void printItems() {
+        for (String item : items) {
+            System.out.println(item);
+        }
+    }
+
+
+public void cacheValue(String key, String value) {
+        cache.put(key, value);
+    }
+
+
+public String getCachedValue(String key) {
+        return cache.getOrDefault(key, "N/A");
+    }
+
+
+public void methodBlock1() {
+        for (int i = 0; i < 50; i++) {
+            System.out.println("Block1 line " + i);
+        }
+    }
+
+
+public void methodBlock2() {
+        for (int i = 0; i < 50; i++) {
+            System.out.println("Block2 line " + i);
+        }
+    }
+
+
+public void methodBlock3() {
+        for (int i = 0; i < 50; i++) {
+            System.out.println("Block3 line " + i);
+        }
+    }
+---
+{ System.out.println("Block1 line " + i); } } public void methodBlock2() { for (int i = 0; i < 50; i++) { System.out.println("Block2 line " + i); } } public void methodBlock3() { for (int i = 0; i < 50; i++) { System.out.println("Block3 line " + i); } } public void methodBlock4() {
+        for (int i = 0; i < 50; i++) {
+            System.out.println("Block4 line " + i);
+        }
+    }
+
+
+public void methodBlock5() {
+        for (int i = 0; i < 50; i++) {
+            System.out.println("Block5 line " + i);
+        }
+    }
+
+
+public void methodBlock6() {
+        for (int i = 0; i < 50; i++) {
+            System.out.println("Block6 line " + i);
+        }
+    }
+
+
+public void methodBlock7() {
+        for (int i = 0; i < 50; i++) {
+            System.out.println("Block7 line " + i);
+        }
+    }
+
+
+public void methodBlock8() {
+        for (int i = 0; i < 50; i++) {
+            System.out.println("Block8 line " + i);
+        }
+    }
+
+
+public void methodBlock9() {
+        for (int i = 0; i < 50; i++) {
+            System.out.println("Block9 line " + i);
+        }
+    }
+
+
+public void methodBlock10() {
+        for (int i = 0; i < 50; i++) {
+            System.out.println("Block10 line " + i);
+        }
+    }
+
+
+public void giantLoop() {
+        for (int i = 0; i < 1000; i++) {
+            System.out.println("Line " + i);
+        }
+    }
+
+
+public String streamExample(List<Integer> numbers) {
+        return numbers.stream()
+                .map(n -> "Number: " + n)
+                .collect(Collectors.joining(", "));
+    }
+
+    // Вложенный класс
+
+public static
+class InnerHelper {
+
+public void help() {
+            System.out.println("InnerHelper is helping.");
+        }
+---
+giantLoop() { for (int i = 0; i < 1000; i++) { System.out.println("Line " + i); } } public String streamExample(List<Integer> numbers) { return numbers.stream() .map(n -> "Number: " + n) .collect(Collectors.joining(", ")); } // Вложенный класс public static class InnerHelper { public void help() { System.out.println("InnerHelper is helping."); } public void bigNestedLoop() {
+            for (int i = 0; i < 500; i++) {
+                for (int j = 0; j < 10; j++) {
+                    System.out.println("Nested i=" + i + ", j=" + j);
+                }
+            }
+        }
+    }
+
+
+public static
+class DataHolder {
+
+private final List<String> data = new ArrayList<>();
+
+
+public void add(String value) {
+            data.add(value);
+        }
+
+
+public void dump() {
+            for (String s : data) {
+                System.out.println(s);
+            }
+        }
+    }
+
+    static {
+        for (int i = 0; i < 200; i++) {
+            System.out.println("Static init line " + i);
+        }
+    }
+}

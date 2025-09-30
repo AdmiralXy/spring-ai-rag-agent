@@ -42,7 +42,7 @@ public class RagServiceImpl implements RagService {
                 ID_METADATA_KEY, docId
         );
 
-        List<String> chunks = textChunkerService.chunk(text, 80, 1000, 10);
+        List<String> chunks = textChunkerService.chunk(text, 100, 1500, 50);
         int total = chunks.size();
 
         return Flux.create(sink -> {

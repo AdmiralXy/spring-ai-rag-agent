@@ -5,6 +5,7 @@ import io.github.admiralxy.agent.controller.response.documents.AddToSpaceRq;
 import io.github.admiralxy.agent.domain.RagDocument;
 import io.github.admiralxy.agent.service.RagService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -25,10 +26,11 @@ import java.util.concurrent.CompletableFuture;
 public class RagController {
 
     private final RagService ragService;
+    private final ThreadPoolTaskExecutor taskExecutor;
 
     @PostMapping("/{space}/documents/stream")
     public SseEmitter addStream(@PathVariable String space, @RequestBody AddToSpaceRq rq) {
-        SseEmitter emitter = new SseEmitter();
+        SseEmitter emitter = new SseEmitter(240_000L);
         CompletableFuture.runAsync(() -> {
             try {
                 ragService.add(space, rq.text())
@@ -44,7 +46,7 @@ public class RagController {
             } catch (Exception e) {
                 emitter.completeWithError(e);
             }
-        });
+        }, taskExecutor);
         return emitter;
     }
 
