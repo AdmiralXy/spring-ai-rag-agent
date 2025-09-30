@@ -43,7 +43,8 @@ class TextChunkerServiceImplTest {
         return Stream.of(
                 Arguments.of("input_1.txt", "expected_1.txt"),
                 Arguments.of("input_2.txt", "expected_2.txt"),
-                Arguments.of("input_3.txt", "expected_3.txt")
+                Arguments.of("input_3.txt", "expected_3.txt"),
+                Arguments.of("input_4.txt", "expected_4.txt")
         );
     }
 
