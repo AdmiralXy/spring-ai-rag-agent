@@ -48,7 +48,9 @@ class TextChunkerServiceImplTest {
     }
 
     private static String readText(String resourcePath) {
-        if (resourcePath == null) return null;
+        if (resourcePath == null) {
+            return null;
+        }
         try (InputStream is = TextChunkerServiceImplTest.class.getResourceAsStream(resourcePath)) {
             Objects.requireNonNull(is, "Resource not found: " + resourcePath);
             return new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))

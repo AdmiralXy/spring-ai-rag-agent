@@ -73,7 +73,7 @@ public class TextChunkerServiceImpl implements TextChunkerService {
                 addChunkWithLineOverlap(chunks, current.toString(), overlapLines, maxChars);
                 current.setLength(0);
             }
-            current.append(block).append("\n");
+            current.append(block).append(StringUtils.LF);
         }
 
         if (!current.isEmpty()) {
@@ -95,7 +95,7 @@ public class TextChunkerServiceImpl implements TextChunkerService {
                 if (chunk.length() + word.length() + 1 > maxChars) {
                     break;
                 }
-                chunk.append(word).append(" ");
+                chunk.append(word).append(StringUtils.SPACE);
                 i++;
             }
             if (!chunk.isEmpty()) {
@@ -119,7 +119,7 @@ public class TextChunkerServiceImpl implements TextChunkerService {
                 chunks.add(current.toString().trim());
                 current.setLength(0);
             }
-            current.append(line).append("\n");
+            current.append(line).append(StringUtils.LF);
         }
         if (!current.isEmpty()) {
             chunks.add(current.toString().trim());
@@ -143,7 +143,7 @@ public class TextChunkerServiceImpl implements TextChunkerService {
 
             StringBuilder prefix = new StringBuilder();
             for (int i = prevLines.length - count; i < prevLines.length; i++) {
-                prefix.append(prevLines[i]).append("\n");
+                prefix.append(prevLines[i]).append(StringUtils.LF);
             }
             chunk = (prefix + chunk).trim();
         }
@@ -166,7 +166,7 @@ public class TextChunkerServiceImpl implements TextChunkerService {
 
             StringBuilder prefix = new StringBuilder();
             for (int i = words.length - count; i < words.length; i++) {
-                prefix.append(words[i]).append(" ");
+                prefix.append(words[i]).append(StringUtils.SPACE);
             }
             chunk = (prefix + chunk).trim();
         }
