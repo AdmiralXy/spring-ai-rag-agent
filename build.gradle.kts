@@ -64,7 +64,7 @@ jib {
     container {
         mainClass = "io.github.admiralxy.agent.AgentApplication"
         from {
-            image = "azul/zulu-openjdk:25-jre"
+            image = "eclipse-temurin:25-jre-alpine"
         }
         jvmFlags = listOf(
             "-XX:+UseZGC"
