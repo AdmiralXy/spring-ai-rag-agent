@@ -10,7 +10,6 @@ import io.github.admiralxy.agent.service.ChatService;
 import io.github.admiralxy.agent.service.RagService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.AbstractChatMemoryAdvisor;
@@ -25,10 +24,8 @@ import reactor.core.Disposable;
 import reactor.core.publisher.ConnectableFlux;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.publisher.SignalType;
 import reactor.core.scheduler.Schedulers;
 
-import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -78,7 +75,7 @@ public class ChatServiceImpl implements ChatService {
                     String context = ragService.buildContext(
                             conv.getRagSpace(), text,
                             ragProperties.getPercentage(),
-                            ragProperties.getMaxChars(),
+                            ragProperties.getMaxTokens(),
                             ragProperties.getTopK()
                     );
 
@@ -124,7 +121,8 @@ public class ChatServiceImpl implements ChatService {
                                                 || (msg != null && msg.toLowerCase().contains("clientabortexception"));
                                 return disconnected ? Mono.empty() : Mono.error(t);
                             })
-                            .doFinally(ignored -> {});
+                            .doFinally(ignored -> {
+                            });
                 });
     }
 

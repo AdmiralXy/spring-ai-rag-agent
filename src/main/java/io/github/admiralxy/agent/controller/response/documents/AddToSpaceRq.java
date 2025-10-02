@@ -1,4 +1,4 @@
 package io.github.admiralxy.agent.controller.response.documents;
 
-public record AddToSpaceRq(String text) {
+public record AddToSpaceRq(String text, boolean batch) {
 }

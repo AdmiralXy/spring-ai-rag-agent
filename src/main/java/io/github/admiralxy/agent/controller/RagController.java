@@ -33,7 +33,7 @@ public class RagController {
         SseEmitter emitter = new SseEmitter(240_000L);
         CompletableFuture.runAsync(() -> {
             try {
-                ragService.add(space, rq.text())
+                ragService.add(space, rq.text(), rq.batch())
                         .doOnNext(percent -> {
                             try {
                                 emitter.send(SseEmitter.event().data(percent));

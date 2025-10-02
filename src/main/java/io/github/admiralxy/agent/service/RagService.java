@@ -12,9 +12,10 @@ public interface RagService {
      *
      * @param spaceId space ID
      * @param text content
+     * @param batch apply batch
      * @return stream of percentages indicating progress
      */
-    Flux<Integer> add(String spaceId, String text);
+    Flux<Integer> add(String spaceId, String text, boolean batch);
 
     /**
      * Delete a document by its ID.

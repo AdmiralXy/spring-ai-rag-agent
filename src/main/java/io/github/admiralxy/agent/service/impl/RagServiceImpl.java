@@ -2,6 +2,7 @@ package io.github.admiralxy.agent.service.impl;
 
 import io.github.admiralxy.agent.service.RagService;
 import io.github.admiralxy.agent.service.TextChunkerService;
+import io.github.admiralxy.agent.service.TokenizerService;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.ai.document.Document;
@@ -33,16 +34,19 @@ public class RagServiceImpl implements RagService {
 
     private final VectorStore store;
     private final TextChunkerService textChunkerService;
+    private final TokenizerService tokenizerService;
 
     @Override
-    public Flux<Integer> add(String spaceId, String text) {
+    public Flux<Integer> add(String spaceId, String text, boolean batch) {
         String docId = UUID.randomUUID().toString();
         Map<String, Object> meta = Map.of(
                 SPACE_METADATA_KEY, spaceId,
                 ID_METADATA_KEY, docId
         );
 
-        List<String> chunks = textChunkerService.chunk(text, 100, 1500, 50);
+        List<String> chunks = batch
+                ? textChunkerService.chunk(text, 100, 1500, 50)
+                : List.of(text);
         int total = chunks.size();
 
         return Flux.create(sink -> {
@@ -132,7 +136,7 @@ public class RagServiceImpl implements RagService {
     }
 
     @Override
-    public String buildContext(String spaceId, String query, double percentage, int maxChars, int topK) {
+    public String buildContext(String spaceId, String query, double percentage, int maxTokens, int topK) {
         List<Document> docs = store.similaritySearch(
                 SearchRequest.query(query)
                         .withTopK(topK)
@@ -143,22 +147,28 @@ public class RagServiceImpl implements RagService {
             return StringUtils.EMPTY;
         }
 
-        int totalLength = docs.stream()
-                .mapToInt(d -> d.getContent().length())
+        int totalTokens = docs.stream()
+                .mapToInt(d -> tokenizerService.countTokens(d.getContent()))
                 .sum();
 
-        int targetLength = (int) (totalLength * (percentage / 100.0));
-        targetLength = Math.max(targetLength, maxChars / 2);
-        targetLength = Math.min(maxChars, targetLength);
+        int targetTokens = totalTokens;
+        if (totalTokens > maxTokens) {
+            targetTokens = (int)(totalTokens * (percentage / 100.0));
+            targetTokens = Math.min(maxTokens, targetTokens);
+        }
 
         StringBuilder sb = new StringBuilder();
         int used = 0;
 
         for (Document doc : docs) {
             String content = doc.getContent();
-            int len = content.length();
+            int len = tokenizerService.countTokens(content);
 
-            if (used > 0 && used + len > targetLength) {
+            if (used + len > targetTokens) {
+                int remaining = targetTokens - used;
+                if (remaining > 0) {
+                    sb.append(tokenizerService.truncateToTokens(content, remaining));
+                }
                 break;
             }
 

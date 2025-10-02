@@ -9,8 +9,8 @@ app:
     history-limit: 20
     rag:
       percentage: 30
-      max-chars: 4000
       top-k: 100
+      max-tokens: 110000
 
 spring:
   application:

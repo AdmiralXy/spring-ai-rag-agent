@@ -17,12 +17,12 @@ public class RagProperties {
     private int percentage = 30;
 
     /**
-     * RAG max chars to include in the prompt.
+     * RAG max tokens to include in the prompt.
      */
-    private int maxChars = 4000;
+    private int maxTokens = 110_000;
 
     /**
-     * RAG max chars to include in the prompt.
+     * RAG top-k documents to include.
      */
     private int topK = 100;
 }

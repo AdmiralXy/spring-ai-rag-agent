@@ -39,6 +39,7 @@ dependencies {
     implementation("org.springframework.ai:spring-ai-ollama-spring-boot-starter")
     implementation("org.springframework.ai:spring-ai-openai-spring-boot-starter")
     implementation("org.springframework.ai:spring-ai-pgvector-store-spring-boot-starter")
+    implementation("com.knuddels:jtokkit:1.1.0")
 
     // Database
     implementation("org.liquibase:liquibase-core")
