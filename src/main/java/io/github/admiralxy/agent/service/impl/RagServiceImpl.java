@@ -153,7 +153,7 @@ public class RagServiceImpl implements RagService {
 
         int targetTokens = totalTokens;
         if (totalTokens > maxTokens) {
-            targetTokens = (int)(totalTokens * (percentage / 100.0));
+            targetTokens = (int) (totalTokens * (percentage / 100.0));
             targetTokens = Math.min(maxTokens, targetTokens);
         }
 
