@@ -20,6 +20,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.Disposable;
 import reactor.core.publisher.ConnectableFlux;
 import reactor.core.publisher.Flux;
@@ -92,7 +93,14 @@ public class ChatServiceImpl implements ChatService {
 
                     Flux<String> tapped = source
                             .doOnNext(acc::append)
-                            .doOnError(e -> log.warn("LLM stream error for conversation {}", id, e))
+                            .doOnError(e -> {
+                                if (e instanceof WebClientResponseException ex) {
+                                    log.error("LLM stream error for conversation {}: {} \nResponse body:\n{}",
+                                            id, ex.getStatusText(), ex.getResponseBodyAsString());
+                                } else {
+                                    log.warn("LLM stream error for conversation {}", id, e);
+                                }
+                            })
                             .doFinally(ignored -> {
                                 try {
                                     String assistantText = acc.toString();

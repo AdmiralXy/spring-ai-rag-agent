@@ -41,6 +41,7 @@ spring:
       chat:
         options:
           model: ${AI_MODEL:deepseek-chat}
+          temperature: 1.0
 
 springdoc:
   api-docs:
