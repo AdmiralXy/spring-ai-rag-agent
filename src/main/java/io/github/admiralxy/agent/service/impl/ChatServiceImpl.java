@@ -10,6 +10,7 @@ import io.github.admiralxy.agent.service.ChatService;
 import io.github.admiralxy.agent.service.RagService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.AbstractChatMemoryAdvisor;
@@ -80,14 +81,19 @@ public class ChatServiceImpl implements ChatService {
                             ragProperties.getTopK()
                     );
 
-                    Flux<String> source = chatClient.prompt()
-                            .system(org.apache.commons.lang3.StringUtils.isNotBlank(context)
+                    ChatClient.ChatClientRequestSpec chatSpec = chatClient.prompt()
+                            .system(StringUtils.isNotBlank(context)
                                     ? SYSTEM_PROMPT.formatted(context)
-                                    : org.apache.commons.lang3.StringUtils.EMPTY)
+                                    : StringUtils.EMPTY)
                             .user(text)
-                            .advisors(a -> a.param(AbstractChatMemoryAdvisor.CHAT_MEMORY_CONVERSATION_ID_KEY, id))
-                            .stream()
-                            .content();
+                            .advisors(a -> a.param(AbstractChatMemoryAdvisor.CHAT_MEMORY_CONVERSATION_ID_KEY, id));
+                    Flux<String> source;
+
+                    if (chatProperties.isStreaming()) {
+                        source = chatSpec.stream().content();
+                    } else {
+                        source = Flux.just(chatSpec.call().content());
+                    }
 
                     final StringBuilder acc = new StringBuilder();
 

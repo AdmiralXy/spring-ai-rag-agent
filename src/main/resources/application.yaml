@@ -11,6 +11,7 @@ app:
       percentage: 30
       top-k: 100
       max-tokens: 110000
+    streaming: true
 
 spring:
   application:
