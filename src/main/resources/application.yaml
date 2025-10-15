@@ -2,7 +2,6 @@ server:
   port: 8080
   servlet:
     context-path: /api/agent
-  max-http-request-header-size: 20MB
 
 app:
   chat:

@@ -1,4 +1,4 @@
-package io.github.admiralxy.agent.controller.request.chat;
+package io.github.admiralxy.agent.controller.response.documents;
 
 import io.github.admiralxy.agent.domain.RagDocument;
 

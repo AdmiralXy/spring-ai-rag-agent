@@ -1,6 +1,7 @@
 package io.github.admiralxy.agent.controller;
 
 import io.github.admiralxy.agent.controller.request.chat.CreateChatRq;
+import io.github.admiralxy.agent.controller.request.chat.StreamChatRq;
 import io.github.admiralxy.agent.controller.response.chat.ChatHistoryRs;
 import io.github.admiralxy.agent.controller.response.chat.CreateChatRs;
 import io.github.admiralxy.agent.controller.response.chat.GetChatsRs;
@@ -37,9 +38,9 @@ public class ChatController {
         return new CreateChatRs(chat.getKey(), chat.getValue());
     }
 
-    @GetMapping(value = "/{id}/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<String> streamChat(@PathVariable UUID id, @RequestParam String text) {
-        return chatService.send(id, text);
+    @PostMapping(value = "/{id}/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<String> streamChat(@PathVariable UUID id, @RequestBody StreamChatRq rq) {
+        return chatService.send(id, rq.text());
     }
 
     @GetMapping("/{id}/history")
