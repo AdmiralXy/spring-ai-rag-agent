@@ -1,6 +1,6 @@
 # Spring AI RAG Agent
 
-**Spring Boot 3.5+** application that demonstrates Retrieval-Augmented Generation (RAG) with chat support and vector search.
+**Spring Boot 3.5+** application featuring Retrieval-Augmented Generation (RAG) with UI, chat and vector search.
 
 <p align="center">
   <a href="https://github.com/AdmiralXy/spring-ai-rag-agent">
