@@ -1,0 +1,11 @@
+databaseChangeLog:
+  - changeSet:
+      id: add-model-name-to-conversations-table
+      author: AdmiralXy
+      changes:
+        - addColumn:
+            tableName: t_conversations
+            columns:
+              - column:
+                  name: c_model_name
+                  type: text

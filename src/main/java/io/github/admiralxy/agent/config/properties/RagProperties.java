@@ -17,11 +17,6 @@ public class RagProperties {
     private int percentage = 30;
 
     /**
-     * RAG max tokens to include in the prompt.
-     */
-    private int maxTokens = 110_000;
-
-    /**
      * RAG top-k documents to include.
      */
     private int topK = 100;

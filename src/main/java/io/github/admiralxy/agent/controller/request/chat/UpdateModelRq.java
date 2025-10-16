@@ -1,4 +1,4 @@
 package io.github.admiralxy.agent.controller.request.chat;
 
-public record StreamChatRq(String modelName, String text) {
+public record UpdateModelRq(String modelAlias) {
 }

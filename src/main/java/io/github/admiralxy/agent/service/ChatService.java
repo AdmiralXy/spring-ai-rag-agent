@@ -28,13 +28,23 @@ public interface ChatService {
     Pair<UUID, String> create(String ragSpace);
 
     /**
+     * Updates the model name associated with the specified chat.
+     *
+     * @param chatId    unique identifier of the chat
+     * @param modelName new model name to be assigned to the chat
+     * @return updated name
+     */
+    String updateModelName(UUID chatId, String modelName);
+
+    /**
      * Send message to chat and get response.
      *
      * @param id chat ID
+     * @param modelAlias model alias
      * @param text message text
      * @return response text as a stream
      */
-    Flux<String> send(UUID id, String text);
+    Flux<String> send(UUID id, String modelAlias, String text);
 
     /**
      * Get chat history.

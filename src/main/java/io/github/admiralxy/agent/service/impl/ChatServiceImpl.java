@@ -1,13 +1,16 @@
 package io.github.admiralxy.agent.service.impl;
 
 import io.github.admiralxy.agent.config.properties.ChatProperties;
+import io.github.admiralxy.agent.config.properties.ModelProperties;
 import io.github.admiralxy.agent.config.properties.RagProperties;
 import io.github.admiralxy.agent.domain.Chat;
 import io.github.admiralxy.agent.domain.ChatMessage;
 import io.github.admiralxy.agent.entity.ConversationEntity;
+import io.github.admiralxy.agent.registry.ChatClientsRegistry;
 import io.github.admiralxy.agent.repository.ConversationRepository;
 import io.github.admiralxy.agent.service.ChatService;
 import io.github.admiralxy.agent.service.RagService;
+import jakarta.annotation.Nullable;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -38,21 +41,22 @@ import java.util.UUID;
 public class ChatServiceImpl implements ChatService {
 
     private static final String CONVERSATION_NOT_FOUND = "Conversation not found";
-    private static final String SYSTEM_PROMPT = "Use this additional information for answer:\n%s";
+    private static final String MODEL_NOT_FOUND = "Model '%s' not found. Switching to fallback model.";
+    private static final String CONTEXT_PROMPT = "Use this additional information for answer:\n%s";
     private static final String SORT_DIRECTION_COLUMN = "createdAt";
 
     private final ConversationRepository conversationRepository;
     private final RagService ragService;
     private final ChatProperties chatProperties;
     private final RagProperties ragProperties;
-    private final ChatClient chatClient;
+    private final ChatClientsRegistry chatClientsRegistry;
     private final ChatMemory chatMemory;
 
     @Override
     public Page<Chat> getAll(int size) {
         Pageable page = PageRequest.of(0, size, Sort.by(Sort.Direction.DESC, SORT_DIRECTION_COLUMN));
         return conversationRepository.findAll(page)
-                .map(chat -> new Chat(chat.getId(), chat.getTitle(), chat.getRagSpace()));
+                .map(chat -> new Chat(chat.getId(), chat.getTitle(), chat.getModelName(), chat.getRagSpace()));
     }
 
     @Override
@@ -67,7 +71,23 @@ public class ChatServiceImpl implements ChatService {
     }
 
     @Override
-    public Flux<String> send(UUID id, String text) {
+    public String updateModelName(UUID chatId, String modelName) {
+        var conversation = conversationRepository.findById(chatId)
+                .orElseThrow(() -> new RuntimeException("Conversation not found: " + chatId));
+
+        conversation.setModelName(modelName);
+        conversationRepository.save(conversation);
+        return modelName;
+    }
+
+    @Override
+    public Flux<String> send(UUID id, String modelAlias, String text) {
+        if (!chatClientsRegistry.contains(modelAlias)) {
+            throw new RuntimeException(MODEL_NOT_FOUND.formatted(modelAlias));
+        }
+
+        ChatClient chatClient = chatClientsRegistry.getChatClient(modelAlias);
+        ModelProperties properties = chatClientsRegistry.getProperties(modelAlias);
         return Mono.fromCallable(() ->
                         conversationRepository.findById(id)
                                 .orElseThrow(() -> new IllegalArgumentException(CONVERSATION_NOT_FOUND))
@@ -77,19 +97,17 @@ public class ChatServiceImpl implements ChatService {
                     String context = ragService.buildContext(
                             conv.getRagSpace(), text,
                             ragProperties.getPercentage(),
-                            ragProperties.getMaxTokens(),
+                            properties.getMaxContextTokens() / 2,
                             ragProperties.getTopK()
                     );
 
                     ChatClient.ChatClientRequestSpec chatSpec = chatClient.prompt()
-                            .system(StringUtils.isNotBlank(context)
-                                    ? SYSTEM_PROMPT.formatted(context)
-                                    : StringUtils.EMPTY)
+                            .system(getSystemPrompt(properties.getSystemPrompt(), context))
                             .user(text)
                             .advisors(a -> a.param(AbstractChatMemoryAdvisor.CHAT_MEMORY_CONVERSATION_ID_KEY, id));
-                    Flux<String> source;
 
-                    if (chatProperties.isStreaming()) {
+                    Flux<String> source;
+                    if (properties.isStreaming()) {
                         source = chatSpec.stream().content();
                     } else {
                         source = Flux.just(chatSpec.call().content());
@@ -138,6 +156,19 @@ public class ChatServiceImpl implements ChatService {
                             .doFinally(ignored -> {
                             });
                 });
+    }
+
+    private String getSystemPrompt(@Nullable String systemPrompt, @Nullable String context) {
+        StringBuilder builder = new StringBuilder();
+
+        if (StringUtils.isNotBlank(systemPrompt)) {
+            builder.append(systemPrompt);
+        }
+        if (StringUtils.isNotBlank(context)) {
+            builder.append(StringUtils.LF).append(StringUtils.LF).append(CONTEXT_PROMPT.formatted(context));
+        }
+
+        return builder.toString();
     }
 
     private boolean isDuplicateAssistant(String convId, String newText) {

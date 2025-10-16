@@ -9,8 +9,7 @@ app:
     rag:
       percentage: 30
       top-k: 100
-      max-tokens: 110000
-    streaming: true
+  configPath: ${CONFIG_PATH:classpath:models}
 
 spring:
   application:

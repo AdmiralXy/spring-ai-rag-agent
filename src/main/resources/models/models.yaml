@@ -1,0 +1,7 @@
+- name: deepseek-chat
+  displayName: DeepSeek V3.2
+  alias: deepseek
+  baseUrl: https://api.deepseek.com
+  apiKey: REPLACE_API_KEY
+  properties:
+    streaming: true

@@ -36,6 +36,9 @@ public class ConversationEntity {
     @Column(name = "c_rag_space")
     private String ragSpace;
 
+    @Column(name = "c_model_name")
+    private String modelName;
+
     @CreationTimestamp
     @Column(name = "c_created_at", nullable = false)
     private Instant createdAt;

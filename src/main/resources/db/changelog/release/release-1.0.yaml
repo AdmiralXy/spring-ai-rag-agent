@@ -9,3 +9,5 @@ databaseChangeLog:
       file: db/changes/release/1.0/add-pgvector-extension.yaml
   - include:
       file: db/changes/release/1.0/add-documents-table.yaml
+  - include:
+      file: db/changes/release/1.0/add-model-name-to-conversations-table.yaml

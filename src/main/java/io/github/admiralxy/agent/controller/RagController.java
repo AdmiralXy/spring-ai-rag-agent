@@ -1,7 +1,7 @@
 package io.github.admiralxy.agent.controller;
 
-import io.github.admiralxy.agent.controller.response.documents.GetDocumentsRs;
 import io.github.admiralxy.agent.controller.response.documents.AddToSpaceRq;
+import io.github.admiralxy.agent.controller.response.documents.GetDocumentsRs;
 import io.github.admiralxy.agent.domain.RagDocument;
 import io.github.admiralxy.agent.service.RagService;
 import lombok.RequiredArgsConstructor;

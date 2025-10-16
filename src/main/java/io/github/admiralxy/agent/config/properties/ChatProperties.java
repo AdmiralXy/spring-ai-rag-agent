@@ -17,11 +17,6 @@ public class ChatProperties {
     private int historyLimit = 20;
 
     /**
-     * Use streaming responses.
-     */
-    private boolean streaming = true;
-
-    /**
      * RAG properties.
      */
     private RagProperties rag;
