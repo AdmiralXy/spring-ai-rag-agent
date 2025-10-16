@@ -55,7 +55,7 @@ jobs:
       - name: Build and push Docker images with Jib
         run: |
           echo "Building image: $IMAGE_NAME"
-          ./gradlew check jib --info --warning-mode=all -Djib.to.image=$IMAGE_NAME
+          ./gradlew check jib --info --warning-mode=all -Djib.to.image=$IMAGE_NAME -Djib.to.tags=${{ github.run_id }},latest
         env:
           CI: true
           GPR_USER: ${{ secrets.GPR_USER }}
