@@ -44,21 +44,3 @@ Default base path:
 
 Swagger:
 `http://localhost:8080/api/agent/swagger-ui/index.html`
-
-## 🔑 Configuration
-
-Environment variables (see `application.yaml`):
-```yaml
-DATABASE_URL=jdbc:postgresql://localhost:5432/ai
-DATABASE_USERNAME=aiuser
-DATABASE_PASSWORD=aipass
-
-AI_URL=https://api.deepseek.com
-AI_KEY=your_api_key
-AI_MODEL=deepseek-chat
-
-OLLAMA_URL=http://localhost:11434
-OLLAMA_EMBEDDING_MODEL=embeddinggemma:300m
-```
-
-<br>
