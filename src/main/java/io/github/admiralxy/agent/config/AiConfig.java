@@ -5,9 +5,13 @@ import io.github.admiralxy.agent.config.properties.ModelProperties;
 import io.github.admiralxy.agent.config.properties.ModelsProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.ai.anthropic.AnthropicChatModel;
+import org.springframework.ai.anthropic.AnthropicChatOptions;
+import org.springframework.ai.anthropic.api.AnthropicApi;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
+import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.api.OpenAiApi;
@@ -34,6 +38,8 @@ public class AiConfig {
     private static final String LOG_LOADED_PROMPT = "Loaded system prompt for model {}";
     private static final String LOG_FAILED_PROMPT = "Failed to load system prompt for model {}: {}";
 
+    private static final String CLAUDE_PREFIX = "claude";
+
     @Bean
     public ChatClient chatClient(OpenAiChatModel chatModel, ChatMemory chatMemory) {
         return ChatClient.builder(chatModel)
@@ -48,25 +54,66 @@ public class AiConfig {
         return props.getModels().stream()
                 .collect(Collectors.toMap(
                         ModelsProperties::getAlias,
-                        model -> {
-                            ModelProperties properties = model.getProperties();
-                            if (StringUtils.isBlank(properties.getSystemPrompt())) {
-                                properties.setSystemPrompt(loadSystemPrompt(promptsPath, model.getName()));
-                            }
-
-                            OpenAiApi api = new OpenAiApi(model.getBaseUrl(), model.getApiKey());
-                            OpenAiChatOptions options = OpenAiChatOptions.builder()
-                                    .withModel(model.getName())
-                                    .withTemperature(properties.getTemperature())
-                                    .withStreamUsage(properties.isStreaming())
-                                    .build();
-                            OpenAiChatModel chatModel = new OpenAiChatModel(api, options);
-
-                            return ChatClient.builder(chatModel)
-                                    .defaultAdvisors(MessageChatMemoryAdvisor.builder(chatMemory).build())
-                                    .build();
-                        }
+                        model -> buildChatClient(model, chatMemory, promptsPath)
                 ));
+    }
+
+    private ChatClient buildChatClient(ModelsProperties model,
+                                       ChatMemory chatMemory,
+                                       String promptsPath) {
+
+        ModelProperties properties = model.getProperties();
+
+        if (StringUtils.isBlank(properties.getSystemPrompt())) {
+            properties.setSystemPrompt(loadSystemPrompt(promptsPath, model.getName()));
+        }
+
+        ChatModel chatModel = createChatModel(model);
+
+        return ChatClient.builder(chatModel)
+                .defaultAdvisors(MessageChatMemoryAdvisor.builder(chatMemory).build())
+                .build();
+    }
+
+    private ChatModel createChatModel(ModelsProperties model) {
+        if (isClaudeModel(model.getName())) {
+            return createAnthropicModel(model);
+        }
+        return createOpenAiModel(model);
+    }
+
+    private boolean isClaudeModel(String modelName) {
+        return StringUtils.startsWithIgnoreCase(modelName, CLAUDE_PREFIX);
+    }
+
+    private ChatModel createAnthropicModel(ModelsProperties model) {
+        ModelProperties properties = model.getProperties();
+
+        AnthropicApi api = StringUtils.isNotBlank(model.getBaseUrl())
+                ? new AnthropicApi(model.getBaseUrl(), model.getApiKey())
+                : new AnthropicApi(model.getApiKey());
+
+        AnthropicChatOptions options = AnthropicChatOptions.builder()
+                .withModel(model.getName())
+                .withTemperature(properties.getTemperature())
+                .withMaxTokens(32000)
+                .build();
+
+        return new AnthropicChatModel(api, options);
+    }
+
+    private ChatModel createOpenAiModel(ModelsProperties model) {
+        ModelProperties properties = model.getProperties();
+
+        OpenAiApi api = new OpenAiApi(model.getBaseUrl(), model.getApiKey());
+
+        OpenAiChatOptions options = OpenAiChatOptions.builder()
+                .withModel(model.getName())
+                .withTemperature(properties.getTemperature())
+                .withStreamUsage(properties.isStreaming())
+                .build();
+
+        return new OpenAiChatModel(api, options);
     }
 
     private String loadSystemPrompt(String path, String modelName) {
