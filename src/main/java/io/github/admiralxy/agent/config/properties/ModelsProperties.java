@@ -47,6 +47,7 @@ public class ModelsProperties {
      */
     private boolean summarizer = false;
 
+
     /**
      * Properties.
      */

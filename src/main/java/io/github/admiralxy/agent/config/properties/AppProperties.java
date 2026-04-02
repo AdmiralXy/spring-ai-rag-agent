@@ -13,6 +13,7 @@ import org.yaml.snakeyaml.Yaml;
 
 import java.io.InputStream;
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @Configuration
@@ -50,6 +51,16 @@ public class AppProperties {
         return models;
     }
 
+    public EmbeddingProperties getEmbedding() {
+        if (models == null || models.isEmpty()) {
+            loadModelsFromExternalFile();
+        }
+        if (embedding == null) {
+            embedding = new EmbeddingProperties();
+        }
+        return embedding;
+    }
+
     private void loadModelsFromExternalFile() {
         var modelsPath = configPath + "/" + MODELS_CONFIG_FILENAME;
 
@@ -60,9 +71,25 @@ public class AppProperties {
             if (resource.exists()) {
                 try (InputStream in = resource.getInputStream()) {
                     ObjectMapper mapper = new ObjectMapper();
-                    List<ModelsProperties> modelsProperties = mapper.convertValue(yaml.load(in), new TypeReference<>() {});
+                    Object loaded = yaml.load(in);
+
+                    if (loaded instanceof List<?> list) {
+                        List<ModelsProperties> modelsProperties = mapper.convertValue(list, new TypeReference<>() {});
+                        this.models = modelsProperties;
+                    } else if (loaded instanceof Map<?, ?> map) {
+                        Object modelsNode = map.get("models");
+                        if (modelsNode != null) {
+                            List<ModelsProperties> modelsProperties = mapper.convertValue(modelsNode, new TypeReference<>() {});
+                            this.models = modelsProperties;
+                        }
+
+                        Object embeddingsNode = map.get("embeddings");
+                        if (embeddingsNode != null) {
+                            this.embedding = mapper.convertValue(embeddingsNode, EmbeddingProperties.class);
+                        }
+                    }
+
                     log.info("Loaded models from: {}", modelsPath);
-                    this.models = modelsProperties;
                 }
             } else {
                 log.warn("Models file not found at: {}, skipping...", modelsPath);

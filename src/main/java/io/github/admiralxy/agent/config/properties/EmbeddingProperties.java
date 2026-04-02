@@ -10,41 +10,26 @@ public class EmbeddingProperties {
     /**
      * Active embedding API provider name.
      */
-    private String provider = "openai";
+    private String provider = "openai-compatible";
 
     /**
-     * OpenAI embedding configuration.
+     * API base URL for embedding provider.
      */
-    private OpenAiProperties openai = new OpenAiProperties();
+    private String baseUrl = "https://api.openai.com";
+
+    /**
+     * API key for embedding provider.
+     */
+    private String apiKey;
+
+    /**
+     * Embedding model name.
+     */
+    private String model = "text-embedding-3-small";
+
 
     /**
      * Embedding vector size used by vector store.
      */
     private Integer dimensions = 1536;
-
-    @Getter
-    @Setter
-    public static class OpenAiProperties {
-
-        /**
-         * Enables OpenAI embedding auto-configuration.
-         */
-        private boolean enabled = true;
-
-        /**
-         * API base URL.
-         */
-        private String baseUrl = "https://api.openai.com";
-
-        /**
-         * API key.
-         */
-        private String apiKey;
-
-        /**
-         * Embedding model name.
-         */
-        private String model = "text-embedding-3-small";
-
-    }
 }

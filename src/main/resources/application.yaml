@@ -9,14 +9,6 @@ app:
     rag:
       percentage: 30
       top-k: 100
-  embedding:
-    provider: ${EMBEDDING_PROVIDER:openai}
-    dimensions: ${EMBEDDING_DIMENSIONS:1536}
-    openai:
-      enabled: ${OPENAI_EMBEDDING_ENABLED:true}
-      base-url: ${OPENAI_BASE_URL:https://api.openai.com}
-      api-key: ${OPENAI_API_KEY:API_KEY}
-      model: ${OPENAI_EMBEDDING_MODEL:text-embedding-3-small}
   configPath: ${CONFIG_PATH:classpath:models}
 
 spring:
@@ -29,20 +21,17 @@ spring:
   jpa:
     open-in-view: false
   ai:
+    model:
+      chat: none
+      embedding: none
+      image: none
+      moderation: none
+      audio:
+        speech: none
+        transcription: none
     vectorstore:
       pgvector:
         table-name: documents
-        dimensions: ${app.embedding.dimensions}
-    openai:
-      base-url: ${app.embedding.openai.base-url}
-      api-key: ${app.embedding.openai.api-key}
-      embedding:
-        enabled: ${app.embedding.openai.enabled}
-        options:
-          model: ${app.embedding.openai.model}
-          dimensions: ${app.embedding.dimensions}
-      chat:
-        enabled: false
 
 springdoc:
   api-docs:
