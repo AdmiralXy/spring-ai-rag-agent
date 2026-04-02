@@ -51,10 +51,10 @@ public class PersistentChatMemory implements ChatMemory {
         Optional<UUID> conversationUuid = parseConversationId(conversationId);
         return conversationUuid.map(uuid -> repository.findByConversationIdOrderByCreatedAtAsc(uuid).stream()
                 .map(e -> switch (MessageType.valueOf(e.getRole())) {
-                    case USER -> new UserMessage(e.getContent());
-                    case ASSISTANT -> new AssistantMessage(e.getContent());
-                    case SYSTEM, TOOL -> new SystemMessage(e.getContent());
-                })
+                        case USER -> new UserMessage(e.getContent());
+                        case ASSISTANT -> new AssistantMessage(e.getContent());
+                        case SYSTEM, TOOL -> new SystemMessage(e.getContent());
+                    })
                 .map(Message.class::cast)
                 .toList()).orElse(Collections.emptyList());
 
