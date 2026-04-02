@@ -9,6 +9,14 @@ app:
     rag:
       percentage: 30
       top-k: 100
+  embedding:
+    provider: ${EMBEDDING_PROVIDER:openai}
+    dimensions: ${EMBEDDING_DIMENSIONS:1536}
+    openai:
+      enabled: ${OPENAI_EMBEDDING_ENABLED:true}
+      base-url: ${OPENAI_BASE_URL:https://api.openai.com}
+      api-key: ${OPENAI_API_KEY:API_KEY}
+      model: ${OPENAI_EMBEDDING_MODEL:text-embedding-3-small}
   configPath: ${CONFIG_PATH:classpath:models}
 
 spring:
@@ -24,23 +32,17 @@ spring:
     vectorstore:
       pgvector:
         table-name: documents
-        dimensions: 768
-    ollama:
-      base-url: ${OLLAMA_URL:http://localhost:11434}
-      embedding:
-        options:
-          model: ${OLLAMA_EMBEDDING_MODEL:embeddinggemma:300m}
-      chat:
-        enabled: false
+        dimensions: ${app.embedding.dimensions}
     openai:
-      base-url: ${AI_URL:https://api.deepseek.com}
-      api-key: ${AI_KEY:API_KEY}
+      base-url: ${app.embedding.openai.base-url}
+      api-key: ${app.embedding.openai.api-key}
       embedding:
-        enabled: false
-      chat:
+        enabled: ${app.embedding.openai.enabled}
         options:
-          model: ${AI_MODEL:deepseek-chat}
-          temperature: 1.0
+          model: ${app.embedding.openai.model}
+          dimensions: ${app.embedding.dimensions}
+      chat:
+        enabled: false
 
 springdoc:
   api-docs:

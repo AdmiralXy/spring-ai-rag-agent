@@ -75,27 +75,33 @@ public class RagServiceImpl implements RagService {
     @Override
     public List<Document> search(String spaceId, String query, int topK) {
         return store.similaritySearch(
-                SearchRequest.query(query)
-                        .withTopK(topK)
-                        .withFilterExpression(SPACE_FILTER_EXPRESSION_TEMPLATE.formatted(spaceId))
+                SearchRequest.builder()
+                        .query(query)
+                        .topK(topK)
+                        .filterExpression(SPACE_FILTER_EXPRESSION_TEMPLATE.formatted(spaceId))
+                        .build()
         );
     }
 
     @Override
     public List<Document> listDocuments(String spaceId, int limit) {
         return store.similaritySearch(
-                SearchRequest.query(" ")
-                        .withTopK(limit)
-                        .withFilterExpression(SPACE_FILTER_EXPRESSION_TEMPLATE.formatted(spaceId))
+                SearchRequest.builder()
+                        .query(" ")
+                        .topK(limit)
+                        .filterExpression(SPACE_FILTER_EXPRESSION_TEMPLATE.formatted(spaceId))
+                        .build()
         );
     }
 
     @Override
     public void deleteFromSpace(String spaceId) {
         var docs = store.similaritySearch(
-                SearchRequest.query(StringUtils.SPACE)
-                        .withTopK(Integer.MAX_VALUE)
-                        .withFilterExpression(SPACE_FILTER_EXPRESSION_TEMPLATE.formatted(spaceId))
+                SearchRequest.builder()
+                        .query(StringUtils.SPACE)
+                        .topK(Integer.MAX_VALUE)
+                        .filterExpression(SPACE_FILTER_EXPRESSION_TEMPLATE.formatted(spaceId))
+                        .build()
         );
         if (!docs.isEmpty()) {
             List<String> ids = docs.stream()
@@ -108,9 +114,11 @@ public class RagServiceImpl implements RagService {
     @Override
     public void deleteFromSpace(String spaceId, String docId) {
         var docs = store.similaritySearch(
-                SearchRequest.query(StringUtils.SPACE)
-                        .withTopK(Integer.MAX_VALUE)
-                        .withFilterExpression(ID_SPACE_FILTER_EXPRESSION_TEMPLATE.formatted(docId, spaceId))
+                SearchRequest.builder()
+                        .query(StringUtils.SPACE)
+                        .topK(Integer.MAX_VALUE)
+                        .filterExpression(ID_SPACE_FILTER_EXPRESSION_TEMPLATE.formatted(docId, spaceId))
+                        .build()
         );
         if (!docs.isEmpty()) {
             List<String> ids = docs.stream()
@@ -123,9 +131,11 @@ public class RagServiceImpl implements RagService {
     @Override
     public void deleteChunkFromSpace(String spaceId, String docId, String chunkId) {
         var docs = store.similaritySearch(
-                SearchRequest.query(StringUtils.SPACE)
-                        .withTopK(1)
-                        .withFilterExpression(ID_CHUNK_SPACE_FILTER_EXPRESSION_TEMPLATE.formatted(docId, chunkId, spaceId))
+                SearchRequest.builder()
+                        .query(StringUtils.SPACE)
+                        .topK(1)
+                        .filterExpression(ID_CHUNK_SPACE_FILTER_EXPRESSION_TEMPLATE.formatted(docId, chunkId, spaceId))
+                        .build()
         );
         if (!docs.isEmpty()) {
             List<String> ids = docs.stream()
@@ -138,9 +148,11 @@ public class RagServiceImpl implements RagService {
     @Override
     public String buildContext(String spaceId, String query, double percentage, int maxTokens, int topK) {
         List<Document> docs = store.similaritySearch(
-                SearchRequest.query(query)
-                        .withTopK(topK)
-                        .withFilterExpression(SPACE_FILTER_EXPRESSION_TEMPLATE.formatted(spaceId))
+                SearchRequest.builder()
+                        .query(query)
+                        .topK(topK)
+                        .filterExpression(SPACE_FILTER_EXPRESSION_TEMPLATE.formatted(spaceId))
+                        .build()
         );
 
         if (docs.isEmpty()) {
@@ -148,7 +160,7 @@ public class RagServiceImpl implements RagService {
         }
 
         int totalTokens = docs.stream()
-                .mapToInt(d -> tokenizerService.countTokens(d.getContent()))
+                .mapToInt(d -> tokenizerService.countTokens(d.getText()))
                 .sum();
 
         int targetTokens = totalTokens;
@@ -161,7 +173,7 @@ public class RagServiceImpl implements RagService {
         int used = 0;
 
         for (Document doc : docs) {
-            String content = doc.getContent();
+            String content = doc.getText();
             int len = tokenizerService.countTokens(content);
 
             if (used + len > targetTokens) {

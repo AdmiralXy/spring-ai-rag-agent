@@ -1,6 +1,6 @@
 # Spring AI RAG Agent
 
-Spring Boot 3.5+ application featuring Retrieval-Augmented Generation (RAG) with UI, chat, and vector search, supporting OpenAI API-compatible models.
+Spring Boot 4 application featuring Retrieval-Augmented Generation (RAG) with UI, chat, and vector search, supporting OpenAI API-compatible models.
 
 <p align="center">
   <a href="https://github.com/AdmiralXy/spring-ai-rag-agent">
@@ -17,7 +17,7 @@ Spring Boot 3.5+ application featuring Retrieval-Augmented Generation (RAG) with
 ## ⚙️ Tech Stack
 
 - Java 25+, Spring Boot, Spring Data JPA
-- Spring AI (OpenAI-compatible / Ollama)
+- Spring AI (OpenAI-compatible API)
 - PostgreSQL + pgvector
 - Liquibase for DB migrations
 - Docker Compose for local setup
@@ -30,7 +30,7 @@ Spring Boot 3.5+ application featuring Retrieval-Augmented Generation (RAG) with
   cd spring-ai-rag-agent
 ```
 
-### 2. Start dependencies (Postgres + Ollama)
+### 2. Start dependencies (Postgres)
 ```bash
   docker compose up -d
 ```
@@ -39,6 +39,14 @@ Spring Boot 3.5+ application featuring Retrieval-Augmented Generation (RAG) with
 ```bash
   ./gradlew bootRun
 ```
+
+### 4. Embeddings settings
+- `EMBEDDING_PROVIDER` (default: `openai`)
+- `OPENAI_API_KEY` (required for embeddings)
+- `OPENAI_BASE_URL` (default: `https://api.openai.com`)
+- `OPENAI_EMBEDDING_MODEL` (default: `text-embedding-3-small`)
+- `EMBEDDING_DIMENSIONS` (default: `1536`)
+
 Default base path:  
 `http://localhost:8080/api/agent`
 

@@ -4,10 +4,10 @@ import cz.habarta.typescript.generator.TypeScriptOutputKind
 plugins {
     java
     checkstyle
-    id("org.springframework.boot") version "3.5.6"
+    id("org.springframework.boot") version "4.0.3"
     id("io.spring.dependency-management") version "1.1.7"
     id("cz.habarta.typescript-generator") version "3.2.1263"
-    id("com.google.cloud.tools.jib") version "3.4.2"
+    id("com.google.cloud.tools.jib") version "3.5.3"
 }
 
 group = "io.github.admiralxy"
@@ -26,7 +26,7 @@ repositories {
     maven("https://repo.spring.io/milestone")
 }
 
-extra["springAiVersion"] = "1.0.0-M3"
+extra["springAiVersion"] = "2.0.0-M2"
 
 dependencies {
     // Spring Boot
@@ -36,14 +36,13 @@ dependencies {
 
     // Spring AI
     implementation(platform("org.springframework.ai:spring-ai-bom:${property("springAiVersion")}"))
-    implementation("org.springframework.ai:spring-ai-ollama-spring-boot-starter")
-    implementation("org.springframework.ai:spring-ai-openai-spring-boot-starter")
-    implementation("org.springframework.ai:spring-ai-anthropic-spring-boot-starter")
-    implementation("org.springframework.ai:spring-ai-pgvector-store-spring-boot-starter")
+    implementation("org.springframework.ai:spring-ai-starter-model-openai")
+    implementation("org.springframework.ai:spring-ai-anthropic")
+    implementation("org.springframework.ai:spring-ai-starter-vector-store-pgvector")
     implementation("com.knuddels:jtokkit:1.1.0")
 
     // Database
-    implementation("org.liquibase:liquibase-core")
+    implementation("org.springframework.boot:spring-boot-starter-liquibase")
     runtimeOnly("org.postgresql:postgresql")
 
     // Swagger

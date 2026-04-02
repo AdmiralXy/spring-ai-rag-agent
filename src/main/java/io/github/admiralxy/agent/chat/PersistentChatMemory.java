@@ -12,7 +12,6 @@ import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.MessageType;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -33,21 +32,14 @@ public class PersistentChatMemory implements ChatMemory {
             var e = new ChatMessageEntity();
             e.setConversation(conversation);
             e.setRole(m.getMessageType().name());
-            e.setContent(m.getContent());
+            e.setContent(m.getText());
             repository.save(e);
         }
     }
 
     @Override
-    public List<Message> get(String conversationId, int lastN) {
-        var page = repository.findByConversationIdOrderByCreatedAtDesc(
-                UUID.fromString(conversationId),
-                PageRequest.of(0, lastN)
-        );
-
-        var list = page.getContent().reversed();
-
-        return list.stream()
+    public List<Message> get(String conversationId) {
+        return repository.findByConversationIdOrderByCreatedAtAsc(UUID.fromString(conversationId)).stream()
                 .map(e -> switch (MessageType.valueOf(e.getRole())) {
                         case USER -> new UserMessage(e.getContent());
                         case ASSISTANT -> new AssistantMessage(e.getContent());

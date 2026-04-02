@@ -38,6 +38,11 @@ public class AppProperties {
      */
     private List<ModelsProperties> models;
 
+    /**
+     * Embedding provider settings.
+     */
+    private EmbeddingProperties embedding = new EmbeddingProperties();
+
     public List<ModelsProperties> getModels() {
         if (models == null || models.isEmpty()) {
             loadModelsFromExternalFile();

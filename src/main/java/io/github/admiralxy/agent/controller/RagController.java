@@ -67,7 +67,7 @@ public class RagController {
             @RequestParam(defaultValue = "5") int k
     ) {
         List<RagDocument> documents = ragService.search(space, q, k).stream()
-                .map(d -> new RagDocument(d.getId(), d.getContent(), d.getMetadata()))
+                .map(d -> new RagDocument(d.getId(), d.getText(), d.getMetadata()))
                 .toList();
         return new GetDocumentsRs(documents);
     }
@@ -79,7 +79,7 @@ public class RagController {
     ) {
         List<RagDocument> documents = ragService.listDocuments(space, limit).stream()
                 .map(d -> new RagDocument(d.getId(),
-                        d.getContent().substring(0, Math.min(3000, d.getContent().length())) + "...",
+                        d.getText().substring(0, Math.min(3000, d.getText().length())) + "...",
                         d.getMetadata()))
                 .toList();
 

@@ -16,7 +16,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.client.advisor.AbstractChatMemoryAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.data.domain.Page;
@@ -44,6 +43,7 @@ public class ChatServiceImpl implements ChatService {
     private static final String MODEL_NOT_FOUND = "Model '%s' not found. Switching to fallback model.";
     private static final String CONTEXT_PROMPT = "Use this additional information for answer:\n%s";
     private static final String SORT_DIRECTION_COLUMN = "createdAt";
+    private static final String CHAT_MEMORY_CONVERSATION_ID_KEY = "chat_memory_conversation_id";
 
     private final ConversationRepository conversationRepository;
     private final RagService ragService;
@@ -104,7 +104,7 @@ public class ChatServiceImpl implements ChatService {
                     ChatClient.ChatClientRequestSpec chatSpec = chatClient.prompt()
                             .system(getSystemPrompt(properties.getSystemPrompt(), context))
                             .user(text)
-                            .advisors(a -> a.param(AbstractChatMemoryAdvisor.CHAT_MEMORY_CONVERSATION_ID_KEY, id));
+                            .advisors(a -> a.param(CHAT_MEMORY_CONVERSATION_ID_KEY, id));
 
                     Flux<String> source;
                     if (properties.isStreaming()) {
@@ -173,12 +173,12 @@ public class ChatServiceImpl implements ChatService {
 
     private boolean isDuplicateAssistant(String convId, String newText) {
         try {
-            var history = chatMemory.get(convId, 1);
+            var history = getLastMessages(convId, 1);
             if (history == null || history.isEmpty()) {
                 return false;
             }
             var last = history.getLast();
-            return (last instanceof AssistantMessage am) && newText.equals(am.getContent());
+            return (last instanceof AssistantMessage am) && newText.equals(am.getText());
         } catch (Exception e) {
             return false;
         }
@@ -186,9 +186,17 @@ public class ChatServiceImpl implements ChatService {
 
     @Override
     public List<ChatMessage> history(UUID id) {
-        return chatMemory.get(id.toString(), chatProperties.getHistoryLimit()).stream()
-                .map(m -> new ChatMessage(m.getMessageType().name(), m.getContent()))
+        return getLastMessages(id.toString(), chatProperties.getHistoryLimit()).stream()
+                .map(m -> new ChatMessage(m.getMessageType().name(), m.getText()))
                 .toList();
+    }
+
+    private List<org.springframework.ai.chat.messages.Message> getLastMessages(String conversationId, int lastN) {
+        List<org.springframework.ai.chat.messages.Message> history = chatMemory.get(conversationId);
+        if (history == null || history.isEmpty() || lastN <= 0 || history.size() <= lastN) {
+            return history;
+        }
+        return history.subList(history.size() - lastN, history.size());
     }
 
     @Override

@@ -40,12 +40,6 @@ public class AiConfig {
 
     private static final String CLAUDE_PREFIX = "claude";
 
-    @Bean
-    public ChatClient chatClient(OpenAiChatModel chatModel, ChatMemory chatMemory) {
-        return ChatClient.builder(chatModel)
-                .defaultAdvisors(MessageChatMemoryAdvisor.builder(chatMemory).build())
-                .build();
-    }
 
     @Bean
     public Map<String, ChatClient> chatClients(AppProperties props, ChatMemory chatMemory) {
@@ -89,31 +83,45 @@ public class AiConfig {
     private ChatModel createAnthropicModel(ModelsProperties model) {
         ModelProperties properties = model.getProperties();
 
-        AnthropicApi api = StringUtils.isNotBlank(model.getBaseUrl())
-                ? new AnthropicApi(model.getBaseUrl(), model.getApiKey())
-                : new AnthropicApi(model.getApiKey());
+        AnthropicApi.Builder apiBuilder = AnthropicApi.builder()
+                .apiKey(model.getApiKey());
+
+        if (StringUtils.isNotBlank(model.getBaseUrl())) {
+            apiBuilder.baseUrl(model.getBaseUrl());
+        }
+
+        AnthropicApi api = apiBuilder.build();
 
         AnthropicChatOptions options = AnthropicChatOptions.builder()
-                .withModel(model.getName())
-                .withTemperature(properties.getTemperature())
-                .withMaxTokens(32000)
+                .model(model.getName())
+                .temperature(properties.getTemperature())
+                .maxTokens(32000)
                 .build();
 
-        return new AnthropicChatModel(api, options);
+        return AnthropicChatModel.builder()
+                .anthropicApi(api)
+                .defaultOptions(options)
+                .build();
     }
 
     private ChatModel createOpenAiModel(ModelsProperties model) {
         ModelProperties properties = model.getProperties();
 
-        OpenAiApi api = new OpenAiApi(model.getBaseUrl(), model.getApiKey());
-
-        OpenAiChatOptions options = OpenAiChatOptions.builder()
-                .withModel(model.getName())
-                .withTemperature(properties.getTemperature())
-                .withStreamUsage(properties.isStreaming())
+        OpenAiApi api = OpenAiApi.builder()
+                .baseUrl(model.getBaseUrl())
+                .apiKey(model.getApiKey())
                 .build();
 
-        return new OpenAiChatModel(api, options);
+        OpenAiChatOptions options = OpenAiChatOptions.builder()
+                .model(model.getName())
+                .temperature(properties.getTemperature())
+                .streamUsage(properties.isStreaming())
+                .build();
+
+        return OpenAiChatModel.builder()
+                .openAiApi(api)
+                .defaultOptions(options)
+                .build();
     }
 
     private String loadSystemPrompt(String path, String modelName) {
