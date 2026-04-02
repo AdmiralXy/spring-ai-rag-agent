@@ -39,6 +39,9 @@ public class ConversationEntity {
     @Column(name = "c_model_name")
     private String modelName;
 
+    @Column(name = "c_title_generated", nullable = false)
+    private boolean titleGenerated;
+
     @CreationTimestamp
     @Column(name = "c_created_at", nullable = false)
     private Instant createdAt;

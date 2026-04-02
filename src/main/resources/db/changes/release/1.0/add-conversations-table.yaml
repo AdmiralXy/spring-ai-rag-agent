@@ -18,6 +18,15 @@ databaseChangeLog:
                   name: c_rag_space
                   type: text
               - column:
+                  name: c_model_name
+                  type: text
+              - column:
+                  name: c_title_generated
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
                   name: c_created_at
                   type: timestamp
               - column:

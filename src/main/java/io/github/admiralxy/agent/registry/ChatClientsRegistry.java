@@ -4,6 +4,8 @@ import io.github.admiralxy.agent.config.properties.ModelProperties;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Component;
 
+import java.util.Optional;
+
 @Component
 public interface ChatClientsRegistry {
 
@@ -30,4 +32,11 @@ public interface ChatClientsRegistry {
      * @return configuration properties
      */
     ModelProperties getProperties(String alias);
+
+    /**
+     * Returns random configured summarizer alias. If no summarizer configured, returns random available alias.
+     *
+     * @return alias for chat title summarization
+     */
+    Optional<String> getSummarizerAlias();
 }

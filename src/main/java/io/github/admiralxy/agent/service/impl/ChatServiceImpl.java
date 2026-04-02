@@ -18,11 +18,15 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.Message;
+import org.springframework.core.io.DefaultResourceLoader;
+import org.springframework.core.io.Resource;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.util.FileCopyUtils;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.Disposable;
 import reactor.core.publisher.ConnectableFlux;
@@ -30,8 +34,12 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 @Slf4j
@@ -44,6 +52,8 @@ public class ChatServiceImpl implements ChatService {
     private static final String CONTEXT_PROMPT = "Use this additional information for answer:\n%s";
     private static final String SORT_DIRECTION_COLUMN = "createdAt";
     private static final String CHAT_MEMORY_CONVERSATION_ID_KEY = "chat_memory_conversation_id";
+    private static final String CHAT_TITLE_PROMPT_PATH = "classpath:messages/chat-summarizer.md";
+    private static final int MAX_CHAT_TITLE_LENGTH = 120;
 
     private final ConversationRepository conversationRepository;
     private final RagService ragService;
@@ -51,6 +61,9 @@ public class ChatServiceImpl implements ChatService {
     private final RagProperties ragProperties;
     private final ChatClientsRegistry chatClientsRegistry;
     private final ChatMemory chatMemory;
+    private final DefaultResourceLoader resourceLoader = new DefaultResourceLoader();
+
+    private String titlePromptTemplate;
 
     @Override
     public Page<Chat> getAll(int size) {
@@ -64,6 +77,7 @@ public class ChatServiceImpl implements ChatService {
         String title = String.valueOf(Instant.now().toEpochMilli());
         ConversationEntity conversation = new ConversationEntity();
         conversation.setTitle(title);
+        conversation.setTitleGenerated(false);
         conversation.setRagSpace(ragSpace);
         conversationRepository.save(conversation);
 
@@ -94,6 +108,8 @@ public class ChatServiceImpl implements ChatService {
                 )
                 .subscribeOn(Schedulers.boundedElastic())
                 .flatMapMany(conv -> {
+                    generateChatTitleIfFirstMessage(conv, text);
+
                     String context = ragService.buildContext(
                             conv.getRagSpace(), text,
                             ragProperties.getPercentage(),
@@ -110,7 +126,7 @@ public class ChatServiceImpl implements ChatService {
                     if (properties.isStreaming()) {
                         source = chatSpec.stream().content();
                     } else {
-                        source = Flux.just(chatSpec.call().content());
+                        source = Flux.just(Objects.requireNonNull(chatSpec.call().content()));
                     }
 
                     final StringBuilder acc = new StringBuilder();
@@ -158,6 +174,63 @@ public class ChatServiceImpl implements ChatService {
                 });
     }
 
+    private void generateChatTitleIfFirstMessage(ConversationEntity conversation, String firstMessage) {
+        if (conversation.isTitleGenerated()) {
+            return;
+        }
+
+        List<Message> history = chatMemory.get(conversation.getId().toString());
+        if (!history.isEmpty()) {
+            return;
+        }
+
+        chatClientsRegistry.getSummarizerAlias().ifPresent(alias -> {
+            try {
+                ChatClient summarizer = chatClientsRegistry.getChatClient(alias);
+                String prompt = getTitlePromptTemplate().formatted(firstMessage);
+                String generatedTitle = summarizer.prompt()
+                        .user(prompt)
+                        .call()
+                        .content();
+
+                String title = sanitizeTitle(generatedTitle, firstMessage);
+                conversation.setTitle(title);
+                conversation.setTitleGenerated(true);
+                conversationRepository.save(conversation);
+            } catch (Exception e) {
+                log.warn("Failed to generate chat title for conversation {}", conversation.getId(), e);
+            }
+        });
+    }
+
+    private String getTitlePromptTemplate() {
+        if (StringUtils.isNotBlank(titlePromptTemplate)) {
+            return titlePromptTemplate;
+        }
+
+        try {
+            Resource resource = resourceLoader.getResource(CHAT_TITLE_PROMPT_PATH);
+            try (InputStream in = resource.getInputStream();
+                 InputStreamReader reader = new InputStreamReader(in, StandardCharsets.UTF_8)) {
+                this.titlePromptTemplate = FileCopyUtils.copyToString(reader);
+                return titlePromptTemplate;
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to load chat title prompt: " + CHAT_TITLE_PROMPT_PATH, e);
+        }
+    }
+
+    private String sanitizeTitle(@Nullable String generatedTitle, String fallbackMessage) {
+        String title = StringUtils.defaultIfBlank(generatedTitle, fallbackMessage).trim();
+        title = StringUtils.removeStart(title, "\"");
+        title = StringUtils.removeEnd(title, "\"");
+
+        if (title.length() > MAX_CHAT_TITLE_LENGTH) {
+            title = title.substring(0, MAX_CHAT_TITLE_LENGTH).trim();
+        }
+        return title;
+    }
+
     private String getSystemPrompt(@Nullable String systemPrompt, @Nullable String context) {
         StringBuilder builder = new StringBuilder();
 
@@ -193,7 +266,7 @@ public class ChatServiceImpl implements ChatService {
 
     private List<org.springframework.ai.chat.messages.Message> getLastMessages(String conversationId, int lastN) {
         List<org.springframework.ai.chat.messages.Message> history = chatMemory.get(conversationId);
-        if (history == null || history.isEmpty() || lastN <= 0 || history.size() <= lastN) {
+        if (history.isEmpty() || lastN <= 0 || history.size() <= lastN) {
             return history;
         }
         return history.subList(history.size() - lastN, history.size());

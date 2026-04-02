@@ -43,6 +43,11 @@ public class ModelsProperties {
     private String apiKey;
 
     /**
+     * Flag for title summarizer model.
+     */
+    private boolean summarizer = false;
+
+    /**
      * Properties.
      */
     @Nonnull
