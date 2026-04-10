@@ -1,6 +1,6 @@
 # Spring AI RAG Agent
 
-Spring Boot 4 application featuring Retrieval-Augmented Generation (RAG) with UI, chat, and vector search, supporting OpenAI API-compatible models.
+Spring Boot 4 application with chat, Retrieval-Augmented Generation (RAG), and pgvector-based search for OpenAI-compatible providers.
 
 <p align="center">
   <a href="https://github.com/AdmiralXy/spring-ai-rag-agent">
@@ -14,41 +14,116 @@ Spring Boot 4 application featuring Retrieval-Augmented Generation (RAG) with UI
   </a>
 </p>
 
-## ⚙️ Tech Stack
+## Tech Stack
 
-- Java 25+, Spring Boot, Spring Data JPA
-- Spring AI (OpenAI-compatible API)
-- PostgreSQL + pgvector
-- Liquibase for DB migrations
-- Docker Compose for local setup
+- Java 25
+- Spring Boot 4
+- Spring AI
+- PostgreSQL 17 + pgvector
+- Liquibase
+- Docker Compose
 
-## 🚀 Quick Start
+## Requirements
 
-### 1. Clone the repo
-```bash
-  git clone https://github.com/AdmiralXy/spring-ai-rag-agent.git
-  cd spring-ai-rag-agent
+- JDK 25
+- Docker and Docker Compose
+- API key for at least one chat model
+- API key for embeddings
+
+## Configuration
+
+### Environment variables
+
+These variables are read directly by Spring Boot:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `DATABASE_URL` | `jdbc:postgresql://localhost:5432/ai` | PostgreSQL connection URL |
+| `DATABASE_USERNAME` | `aiuser` | PostgreSQL username |
+| `DATABASE_PASSWORD` | `aipass` | PostgreSQL password |
+| `EMBEDDING_DIMENSIONS` | `1536` | Vector dimension used in Liquibase migrations |
+| `CONFIG_PATH` | `classpath:models` | Path to the folder containing `models.yaml` |
+
+Use `.env.example` as a template for local variables. Spring Boot does not load `.env` automatically, so load it in your shell or IDE run configuration before starting the app.
+
+### AI models settings
+
+Chat models and embeddings are loaded from `models.yaml` in the directory pointed to by `CONFIG_PATH`.
+
+Default bundled config:
+
+- `src/main/resources/models/models.yaml`
+- `src/main/resources/models/prompts/*.md`
+
+Recommended local override:
+
+- `CONFIG_PATH=file:./config/local`
+- `config/local/models.yaml`
+- `config/local/prompts/<model-name>.md` for optional custom system prompts
+
+Minimal `models.yaml` example:
+
+```yaml
+embeddings:
+  provider: openai-compatible
+  baseUrl: https://api.openai.com
+  apiKey: REPLACE_WITH_EMBEDDING_API_KEY
+  model: text-embedding-3-small
+  dimensions: 1536
+
+models:
+  - name: deepseek-chat
+    displayName: DeepSeek V3.2
+    alias: deepseek
+    summarizer: true
+    baseUrl: https://api.deepseek.com
+    apiKey: REPLACE_WITH_CHAT_API_KEY
+    properties:
+      streaming: true
+      temperature: 1.0
 ```
 
-### 2. Start dependencies (Postgres)
+Important:
+
+- `EMBEDDING_DIMENSIONS` in `.env` must match `embeddings.dimensions` in `models.yaml`
+- API keys and model endpoints are configured in `models.yaml`, not via Spring environment variables
+
+## Quick Start
+
+### 1. Clone the repository
+
 ```bash
-  docker compose up -d
+git clone https://github.com/AdmiralXy/spring-ai-rag-agent.git
+cd spring-ai-rag-agent
 ```
 
-### 3. Run the app
+### 2. Prepare local config
+
+1. Copy `.env.example` to `.env`
+2. If you want to keep provider keys out of the classpath resources, create `config/local/models.yaml`
+3. Set `CONFIG_PATH=file:./config/local` in `.env`
+
+### 3. Start PostgreSQL
+
 ```bash
-  ./gradlew bootRun
+docker compose up -d
 ```
 
-### 4. Embeddings settings
-- `EMBEDDING_PROVIDER` (default: `openai`)
-- `OPENAI_API_KEY` (required for embeddings)
-- `OPENAI_BASE_URL` (default: `https://api.openai.com`)
-- `OPENAI_EMBEDDING_MODEL` (default: `text-embedding-3-small`)
-- `EMBEDDING_DIMENSIONS` (default: `1536`)
+### 4. Run the application
 
-Default base path:  
-`http://localhost:8080/api/agent`
+Gradle:
 
-Swagger:
-`http://localhost:8080/api/agent/swagger-ui/index.html`
+```bash
+./gradlew bootRun
+```
+
+Windows:
+
+```powershell
+.\gradlew.bat bootRun
+```
+
+## Default URLs
+
+- Base API: `http://localhost:8080/api/agent`
+- Swagger UI: `http://localhost:8080/api/agent/swagger-ui/index.html`

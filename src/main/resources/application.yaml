@@ -18,6 +18,9 @@ spring:
     url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/ai}
     username: ${DATABASE_USERNAME:aiuser}
     password: ${DATABASE_PASSWORD:aipass}
+  liquibase:
+    parameters:
+      embedding-dimensions: ${EMBEDDING_DIMENSIONS:1536}
   jpa:
     open-in-view: false
   ai:
