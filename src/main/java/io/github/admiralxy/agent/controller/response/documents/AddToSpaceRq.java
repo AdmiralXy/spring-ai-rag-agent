@@ -1,10 +1,4 @@
 package io.github.admiralxy.agent.controller.response.documents;
 
 public record AddToSpaceRq(String text, boolean batch, ProviderType providerType) {
-
-	public AddToSpaceRq {
-		if (providerType == null) {
-			providerType = ProviderType.TEXT;
-		}
-	}
 }

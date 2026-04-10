@@ -2,9 +2,9 @@ package io.github.admiralxy.agent.service.provider.impl;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
-import io.github.admiralxy.agent.controller.response.documents.ProviderType;
 import io.github.admiralxy.agent.config.properties.ConfluenceProperties;
 import io.github.admiralxy.agent.config.properties.RagProperties;
+import io.github.admiralxy.agent.controller.response.documents.ProviderType;
 import org.junit.jupiter.api.Test;
 import reactor.test.StepVerifier;
 

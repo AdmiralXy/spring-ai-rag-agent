@@ -45,19 +45,18 @@ public class RagController {
 
     void subscribeToProgress(SseEmitter emitter, Flux<Integer> progressFlux) {
         progressFlux
-                .doOnNext(percent -> {
-                    try {
-                        emitter.send(SseEmitter.event().data(percent));
-                    } catch (IOException e) {
-                        throw new IllegalStateException("Failed to send SSE event", e);
-                    }
-                })
-                .subscribe(
-                        ignored -> {
-                        },
-                        emitter::completeWithError,
-                        emitter::complete
-                );
+            .doOnNext(percent -> {
+                try {
+                    emitter.send(SseEmitter.event().data(percent));
+                } catch (IOException e) {
+                    throw new IllegalStateException("Failed to send SSE event", e);
+                }
+            })
+            .subscribe(
+                ignored -> {},
+                emitter::completeWithError,
+                emitter::complete
+            );
     }
 
     @DeleteMapping("/{space}/documents/{docId}")
