@@ -12,6 +12,7 @@ import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.util.HashMap;
 import java.util.List;
@@ -48,32 +49,30 @@ public class RagServiceImpl implements RagService {
                 ID_METADATA_KEY, docId
         );
 
-        String content = resolveContent(text, providerType);
+        return resolveContent(text, providerType)
+                .flatMapMany(content -> {
+                    List<String> chunks = batch
+                            ? textChunkerService.chunk(content, 100, 1500, 50)
+                            : List.of(content);
+                    int total = chunks.size();
 
-        List<String> chunks = batch
-                ? textChunkerService.chunk(content, 100, 1500, 50)
-                : List.of(content);
-        int total = chunks.size();
+                    return Flux.range(0, total)
+                            .map(i -> {
+                                String chunkId = UUID.randomUUID().toString();
+                                String chunk = chunks.get(i);
+                                Map<String, Object> metaChunk = new HashMap<>(meta);
+                                metaChunk.put(CHUNK_NUMBER_METADATA_KEY, i);
+                                metaChunk.put(TOTAL_CHUNKS_METADATA_KEY, chunks.size());
+                                metaChunk.put(CHUNK_ID_METADATA_KEY, chunkId);
 
-        return Flux.create(sink -> {
-            for (int i = 0; i < total; i++) {
-                String chunkId = UUID.randomUUID().toString();
-                String chunk = chunks.get(i);
-                Map<String, Object> metaChunk = new HashMap<>(meta);
-                metaChunk.put(CHUNK_NUMBER_METADATA_KEY, i);
-                metaChunk.put(TOTAL_CHUNKS_METADATA_KEY, chunks.size());
-                metaChunk.put(CHUNK_ID_METADATA_KEY, chunkId);
+                                store.add(List.of(new Document(chunkId, chunk, metaChunk)));
 
-                store.add(List.of(new Document(chunkId, chunk, metaChunk)));
-
-                int percent = (int) (((i + 1) / (double) total) * 100);
-                sink.next(percent);
-            }
-            sink.complete();
-        });
+                                return (int) (((i + 1) / (double) total) * 100);
+                            });
+                });
     }
 
-    private String resolveContent(String text, ProviderType providerType) {
+    private Mono<String> resolveContent(String text, ProviderType providerType) {
         ProviderType effectiveProvider = providerType == null ? ProviderType.TEXT : providerType;
         RagContentProvider contentProvider = contentProviders.stream()
                 .filter(provider -> provider.supports(effectiveProvider))

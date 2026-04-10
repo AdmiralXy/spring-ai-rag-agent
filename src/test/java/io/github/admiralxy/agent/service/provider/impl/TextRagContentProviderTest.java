@@ -2,8 +2,8 @@ package io.github.admiralxy.agent.service.provider.impl;
 
 import io.github.admiralxy.agent.controller.response.documents.ProviderType;
 import org.junit.jupiter.api.Test;
+import reactor.test.StepVerifier;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -19,6 +19,8 @@ class TextRagContentProviderTest {
 
     @Test
     void resolveContentReturnsInputText() {
-        assertEquals("raw text", provider.resolveContent("raw text"));
+        StepVerifier.create(provider.resolveContent("raw text"))
+                .expectNext("raw text")
+                .verifyComplete();
     }
 }

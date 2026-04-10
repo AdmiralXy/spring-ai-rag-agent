@@ -1,6 +1,7 @@
 package io.github.admiralxy.agent.service.provider;
 
 import io.github.admiralxy.agent.controller.response.documents.ProviderType;
+import reactor.core.publisher.Mono;
 
 public interface RagContentProvider {
 
@@ -18,5 +19,5 @@ public interface RagContentProvider {
      * @param text source text from request
      * @return resolved content
      */
-    String resolveContent(String text);
+    Mono<String> resolveContent(String text);
 }

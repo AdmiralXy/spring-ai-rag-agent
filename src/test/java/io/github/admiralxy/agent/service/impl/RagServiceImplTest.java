@@ -13,6 +13,7 @@ import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.util.List;
@@ -64,7 +65,7 @@ class RagServiceImplTest {
     void addUsesTextProviderContentAsIs() {
         // GIVEN
         when(textContentProvider.supports(ProviderType.TEXT)).thenReturn(true);
-        when(textContentProvider.resolveContent("raw text")).thenReturn("raw text");
+        when(textContentProvider.resolveContent("raw text")).thenReturn(Mono.just("raw text"));
 
         // WHEN
         Flux<Integer> result = ragService.add(SPACE_ID, "raw text", false, ProviderType.TEXT);
@@ -85,7 +86,7 @@ class RagServiceImplTest {
         // GIVEN
         when(textContentProvider.supports(ProviderType.CONFLUENCE)).thenReturn(false);
         when(confluenceContentProvider.supports(ProviderType.CONFLUENCE)).thenReturn(true);
-        when(confluenceContentProvider.resolveContent("ignored")).thenReturn("Hello world!");
+        when(confluenceContentProvider.resolveContent("ignored")).thenReturn(Mono.just("Hello world!"));
 
         // WHEN
         Flux<Integer> result = ragService.add(SPACE_ID, "ignored", false, ProviderType.CONFLUENCE);
@@ -104,7 +105,7 @@ class RagServiceImplTest {
     void addUsesChunkerForBatchTextProvider() {
         // GIVEN
         when(textContentProvider.supports(ProviderType.TEXT)).thenReturn(true);
-        when(textContentProvider.resolveContent("batch text")).thenReturn("batch text");
+        when(textContentProvider.resolveContent("batch text")).thenReturn(Mono.just("batch text"));
         when(textChunkerService.chunk("batch text", 100, 1500, 50)).thenReturn(List.of("chunk 1", "chunk 2"));
 
         // WHEN
@@ -124,7 +125,7 @@ class RagServiceImplTest {
     void addUsesTextProviderAsDefaultWhenProviderTypeIsNull() {
         // GIVEN
         when(textContentProvider.supports(ProviderType.TEXT)).thenReturn(true);
-        when(textContentProvider.resolveContent("fallback text")).thenReturn("fallback text");
+        when(textContentProvider.resolveContent("fallback text")).thenReturn(Mono.just("fallback text"));
 
         // WHEN
         Flux<Integer> result = ragService.add(SPACE_ID, "fallback text", false, null);
