@@ -3,6 +3,7 @@ package io.github.admiralxy.agent.config.properties;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.NestedConfigurationProperty;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
@@ -20,4 +21,10 @@ public class RagProperties {
      * RAG top-k documents to include.
      */
     private int topK = 100;
+
+    /**
+     * Confluence connection settings for RAG provider.
+     */
+    @NestedConfigurationProperty
+    private ConfluenceProperties confluence = new ConfluenceProperties();
 }
