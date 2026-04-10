@@ -1,5 +1,6 @@
 package io.github.admiralxy.agent.service;
 
+import io.github.admiralxy.agent.controller.response.documents.ProviderType;
 import org.springframework.ai.document.Document;
 import reactor.core.publisher.Flux;
 
@@ -13,9 +14,10 @@ public interface RagService {
      * @param spaceId space ID
      * @param text content
      * @param batch apply batch
+     * @param providerType content provider type
      * @return stream of percentages indicating progress
      */
-    Flux<Integer> add(String spaceId, String text, boolean batch);
+    Flux<Integer> add(String spaceId, String text, boolean batch, ProviderType providerType);
 
     /**
      * Delete a document by its ID.

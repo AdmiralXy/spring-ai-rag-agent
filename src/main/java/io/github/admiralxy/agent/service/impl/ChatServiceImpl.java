@@ -14,6 +14,7 @@ import jakarta.annotation.Nullable;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
 import org.apache.commons.lang3.tuple.Pair;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.memory.ChatMemory;
@@ -222,8 +223,8 @@ public class ChatServiceImpl implements ChatService {
 
     private String sanitizeTitle(@Nullable String generatedTitle, String fallbackMessage) {
         String title = StringUtils.defaultIfBlank(generatedTitle, fallbackMessage).trim();
-        title = StringUtils.removeStart(title, "\"");
-        title = StringUtils.removeEnd(title, "\"");
+        title = Strings.CI.removeStart(title, "\"");
+        title = Strings.CI.removeEnd(title, "\"");
 
         if (title.length() > MAX_CHAT_TITLE_LENGTH) {
             title = title.substring(0, MAX_CHAT_TITLE_LENGTH).trim();
@@ -247,7 +248,7 @@ public class ChatServiceImpl implements ChatService {
     private boolean isDuplicateAssistant(String convId, String newText) {
         try {
             var history = getLastMessages(convId, 1);
-            if (history == null || history.isEmpty()) {
+            if (history.isEmpty()) {
                 return false;
             }
             var last = history.getLast();
@@ -264,8 +265,8 @@ public class ChatServiceImpl implements ChatService {
                 .toList();
     }
 
-    private List<org.springframework.ai.chat.messages.Message> getLastMessages(String conversationId, int lastN) {
-        List<org.springframework.ai.chat.messages.Message> history = chatMemory.get(conversationId);
+    private List<Message> getLastMessages(String conversationId, int lastN) {
+        List<Message> history = chatMemory.get(conversationId);
         if (history.isEmpty() || lastN <= 0 || history.size() <= lastN) {
             return history;
         }
