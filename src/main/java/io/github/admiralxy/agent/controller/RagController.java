@@ -15,9 +15,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import reactor.core.publisher.Flux;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
 @RestController
@@ -33,21 +35,29 @@ public class RagController {
         SseEmitter emitter = new SseEmitter(240_000L);
         CompletableFuture.runAsync(() -> {
             try {
-                ragService.add(space, rq.text(), rq.batch(), rq.providerType())
-                        .doOnNext(percent -> {
-                            try {
-                                emitter.send(SseEmitter.event().data(percent));
-                            } catch (IOException e) {
-                                emitter.completeWithError(e);
-                            }
-                        })
-                        .doOnComplete(emitter::complete)
-                        .subscribe();
+                subscribeToProgress(emitter, ragService.add(space, rq.text(), rq.batch(), rq.providerType()));
             } catch (Exception e) {
                 emitter.completeWithError(e);
             }
         }, taskExecutor);
         return emitter;
+    }
+
+    void subscribeToProgress(SseEmitter emitter, Flux<Integer> progressFlux) {
+        progressFlux
+                .doOnNext(percent -> {
+                    try {
+                        emitter.send(SseEmitter.event().data(percent));
+                    } catch (IOException e) {
+                        throw new IllegalStateException("Failed to send SSE event", e);
+                    }
+                })
+                .subscribe(
+                        ignored -> {
+                        },
+                        emitter::completeWithError,
+                        emitter::complete
+                );
     }
 
     @DeleteMapping("/{space}/documents/{docId}")
@@ -79,7 +89,7 @@ public class RagController {
     ) {
         List<RagDocument> documents = ragService.listDocuments(space, limit).stream()
                 .map(d -> new RagDocument(d.getId(),
-                        d.getText().substring(0, Math.min(3000, d.getText().length())) + "...",
+                        Objects.requireNonNull(d.getText()).substring(0, Math.min(3000, d.getText().length())) + "...",
                         d.getMetadata()))
                 .toList();
 
