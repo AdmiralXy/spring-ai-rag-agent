@@ -69,11 +69,11 @@ jobs:
           docker save -o myapp.tar $IMAGE_NAME
           gzip myapp.tar
 
-      - name: Create or update release "latest"
+      - name: Create or update release "Latest"
         run: |
           gh release delete latest -y || true
-          gh release create latest myapp.tar.gz \
-            --title "Latest build" \
-            --notes "Auto build from run ${{ github.run_id }}"
+          gh release create latest agent.tar.gz \
+            --title "Latest" \
+            --notes "Release build from run ${{ github.run_id }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
