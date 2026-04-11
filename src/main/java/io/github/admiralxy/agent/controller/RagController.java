@@ -84,7 +84,7 @@ public class RagController {
     @GetMapping("/{space}/documents")
     public GetDocumentsRs listDocuments(
             @PathVariable String space,
-            @RequestParam(defaultValue = "20") int limit
+            @RequestParam(defaultValue = "16") int limit
     ) {
         List<RagDocument> documents = ragService.listDocuments(space, limit).stream()
                 .map(d -> new RagDocument(d.getId(),
