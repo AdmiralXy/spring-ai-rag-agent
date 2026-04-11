@@ -66,8 +66,8 @@ jobs:
 
       - name: Save Docker image to tar.gz
         run: |
-          docker save -o myapp.tar $IMAGE_NAME
-          gzip myapp.tar
+          docker save -o agent.tar $IMAGE_NAME
+          gzip agent.tar
 
       - name: Create or update release "Latest"
         run: |
