@@ -9,7 +9,7 @@ jobs:
 
     permissions:
       packages: write
-      contents: read
+      contents: write
       attestations: write
       id-token: write
 
@@ -60,3 +60,20 @@ jobs:
           CI: true
           GPR_USER: ${{ secrets.GPR_USER }}
           GPR_KEY: ${{ secrets.GPR_KEY }}
+
+      - name: Pull built image locally
+        run: docker pull $IMAGE_NAME
+
+      - name: Save Docker image to tar.gz
+        run: |
+          docker save -o myapp.tar $IMAGE_NAME
+          gzip myapp.tar
+
+      - name: Create or update release "latest"
+        run: |
+          gh release delete latest -y || true
+          gh release create latest myapp.tar.gz \
+            --title "Latest build" \
+            --notes "Auto build from run ${{ github.run_id }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,13 @@
+.git
+.gitignore
+.idea
+.gradle
+build
+out
+
+Dockerfile*
+docker-compose*.yml
+docker-compose*.yaml
+
+**/*.iml
+**/.DS_Store
