@@ -1,0 +1,23 @@
+databaseChangeLog:
+  - changeSet:
+      id: add-prompt-templates-table
+      author: AdmiralXy
+      changes:
+        - createTable:
+            tableName: t_prompt_templates
+            columns:
+              - column:
+                  name: c_id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: c_name
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_content
+                  type: text
+                  constraints:
+                    nullable: false
