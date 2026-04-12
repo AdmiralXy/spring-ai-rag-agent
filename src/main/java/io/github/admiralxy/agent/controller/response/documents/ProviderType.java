@@ -7,7 +7,8 @@ import java.util.Arrays;
 
 public enum ProviderType {
     TEXT("text"),
-    CONFLUENCE("confluence");
+    CONFLUENCE("confluence"),
+    GIT("git");
 
     private final String value;
 

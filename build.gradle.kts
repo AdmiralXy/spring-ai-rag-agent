@@ -48,6 +48,9 @@ dependencies {
     // Swagger
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.5")
 
+    // Git
+    implementation("org.eclipse.jgit:org.eclipse.jgit:7.3.0.202506031305-r")
+
     // Lombok
     compileOnly("org.projectlombok:lombok:1.18.42")
     annotationProcessor("org.projectlombok:lombok:1.18.42")

@@ -1,9 +1,11 @@
 package io.github.admiralxy.agent.service.impl;
 
 import io.github.admiralxy.agent.controller.response.documents.ProviderType;
-import io.github.admiralxy.agent.service.TextChunkerService;
+import io.github.admiralxy.agent.service.AddDocumentCommand;
 import io.github.admiralxy.agent.service.TokenizerService;
+import io.github.admiralxy.agent.service.provider.RagChunk;
 import io.github.admiralxy.agent.service.provider.RagContentProvider;
+import io.github.admiralxy.agent.service.provider.RagContentRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -13,7 +15,6 @@ import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.util.List;
@@ -23,8 +24,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.argThat;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -36,9 +35,6 @@ class RagServiceImplTest {
 
     @Mock
     private VectorStore store;
-
-    @Mock
-    private TextChunkerService textChunkerService;
 
     private TokenizerService tokenizerService;
 
@@ -55,7 +51,6 @@ class RagServiceImplTest {
         tokenizerService = org.mockito.Mockito.mock(TokenizerService.class);
         ragService = new RagServiceImpl(
                 store,
-                textChunkerService,
                 tokenizerService,
                 List.of(textContentProvider, confluenceContentProvider)
         );
@@ -65,10 +60,10 @@ class RagServiceImplTest {
     void addUsesTextProviderContentAsIs() {
         // GIVEN
         when(textContentProvider.supports(ProviderType.TEXT)).thenReturn(true);
-        when(textContentProvider.resolveContent("raw text")).thenReturn(Mono.just("raw text"));
+        when(textContentProvider.resolveChunks(any())).thenReturn(Flux.just(new RagChunk("raw text", 0, 1)));
 
         // WHEN
-        Flux<Integer> result = ragService.add(SPACE_ID, "raw text", false, ProviderType.TEXT);
+        Flux<Integer> result = ragService.add(command(ProviderType.TEXT, "raw text", false));
 
         // THEN
         StepVerifier.create(result)
@@ -76,9 +71,8 @@ class RagServiceImplTest {
                 .verifyComplete();
 
         verify(textContentProvider).supports(ProviderType.TEXT);
-        verify(textContentProvider).resolveContent("raw text");
+        verify(textContentProvider).resolveChunks(any());
         verify(store).add(argThat(docs -> docs.size() == 1 && "raw text".equals(docs.getFirst().getText())));
-        verify(textChunkerService, never()).chunk(eq("raw text"), eq(100), eq(1500), eq(50));
     }
 
     @Test
@@ -86,10 +80,10 @@ class RagServiceImplTest {
         // GIVEN
         when(textContentProvider.supports(ProviderType.CONFLUENCE)).thenReturn(false);
         when(confluenceContentProvider.supports(ProviderType.CONFLUENCE)).thenReturn(true);
-        when(confluenceContentProvider.resolveContent("ignored")).thenReturn(Mono.just("Hello world!"));
+        when(confluenceContentProvider.resolveChunks(any())).thenReturn(Flux.just(new RagChunk("Hello world!", 0, 1)));
 
         // WHEN
-        Flux<Integer> result = ragService.add(SPACE_ID, "ignored", false, ProviderType.CONFLUENCE);
+        Flux<Integer> result = ragService.add(command(ProviderType.CONFLUENCE, "ignored", false));
 
         // THEN
         StepVerifier.create(result)
@@ -97,19 +91,21 @@ class RagServiceImplTest {
                 .verifyComplete();
 
         verify(confluenceContentProvider).supports(ProviderType.CONFLUENCE);
-        verify(confluenceContentProvider).resolveContent("ignored");
+        verify(confluenceContentProvider).resolveChunks(any());
         verify(store).add(argThat(docs -> docs.size() == 1 && "Hello world!".equals(docs.getFirst().getText())));
     }
 
     @Test
-    void addUsesChunkerForBatchTextProvider() {
+    void addStoresAllProviderChunks() {
         // GIVEN
         when(textContentProvider.supports(ProviderType.TEXT)).thenReturn(true);
-        when(textContentProvider.resolveContent("batch text")).thenReturn(Mono.just("batch text"));
-        when(textChunkerService.chunk("batch text", 100, 1500, 50)).thenReturn(List.of("chunk 1", "chunk 2"));
+        when(textContentProvider.resolveChunks(any())).thenReturn(Flux.just(
+                new RagChunk("chunk 1", 0, 2),
+                new RagChunk("chunk 2", 1, 2)
+        ));
 
         // WHEN
-        Flux<Integer> result = ragService.add(SPACE_ID, "batch text", true, ProviderType.TEXT);
+        Flux<Integer> result = ragService.add(command(ProviderType.TEXT, "batch text", true));
 
         // THEN
         StepVerifier.create(result)
@@ -117,7 +113,6 @@ class RagServiceImplTest {
                 .expectNext(100)
                 .verifyComplete();
 
-        verify(textChunkerService).chunk("batch text", 100, 1500, 50);
         verify(store, times(2)).add(anyList());
     }
 
@@ -125,10 +120,10 @@ class RagServiceImplTest {
     void addUsesTextProviderAsDefaultWhenProviderTypeIsNull() {
         // GIVEN
         when(textContentProvider.supports(ProviderType.TEXT)).thenReturn(true);
-        when(textContentProvider.resolveContent("fallback text")).thenReturn(Mono.just("fallback text"));
+        when(textContentProvider.resolveChunks(any())).thenReturn(Flux.just(new RagChunk("fallback text", 0, 1)));
 
         // WHEN
-        Flux<Integer> result = ragService.add(SPACE_ID, "fallback text", false, null);
+        Flux<Integer> result = ragService.add(command(null, "fallback text", false));
 
         // THEN
         StepVerifier.create(result)
@@ -136,7 +131,7 @@ class RagServiceImplTest {
                 .verifyComplete();
 
         verify(textContentProvider).supports(ProviderType.TEXT);
-        verify(textContentProvider).resolveContent("fallback text");
+        verify(textContentProvider).resolveChunks(any());
         verify(store).add(argThat(docs -> docs.size() == 1 && "fallback text".equals(docs.getFirst().getText())));
     }
 
@@ -152,5 +147,9 @@ class RagServiceImplTest {
         // THEN
         assertEquals("alpha\n---\n", result);
         verify(tokenizerService, times(2)).countTokens("alpha");
+    }
+
+    private AddDocumentCommand command(ProviderType providerType, String text, boolean batch) {
+        return new AddDocumentCommand(SPACE_ID, providerType, new RagContentRequest(text, batch, null, null));
     }
 }

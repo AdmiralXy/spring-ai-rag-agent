@@ -1,10 +1,12 @@
 package io.github.admiralxy.agent.service.impl;
 
 import io.github.admiralxy.agent.controller.response.documents.ProviderType;
+import io.github.admiralxy.agent.service.AddDocumentCommand;
 import io.github.admiralxy.agent.service.RagService;
-import io.github.admiralxy.agent.service.TextChunkerService;
 import io.github.admiralxy.agent.service.TokenizerService;
+import io.github.admiralxy.agent.service.provider.RagChunk;
 import io.github.admiralxy.agent.service.provider.RagContentProvider;
+import io.github.admiralxy.agent.service.provider.RagContentRequest;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.ai.document.Document;
@@ -12,7 +14,6 @@ import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
 import java.util.HashMap;
 import java.util.List;
@@ -37,48 +38,46 @@ public class RagServiceImpl implements RagService {
     private static final String TOTAL_CHUNKS_METADATA_KEY = "total";
 
     private final VectorStore store;
-    private final TextChunkerService textChunkerService;
     private final TokenizerService tokenizerService;
     private final List<RagContentProvider> contentProviders;
 
     @Override
-    public Flux<Integer> add(String spaceId, String text, boolean batch, ProviderType providerType) {
+    public Flux<Integer> add(AddDocumentCommand command) {
+        String spaceId = command.spaceId();
         String docId = UUID.randomUUID().toString();
         Map<String, Object> meta = Map.of(
                 SPACE_METADATA_KEY, spaceId,
                 ID_METADATA_KEY, docId
         );
+        RagContentRequest request = command.contentRequest();
 
-        return resolveContent(text, providerType)
-                .flatMapMany(content -> {
-                    List<String> chunks = batch
-                            ? textChunkerService.chunk(content, 100, 1500, 50)
-                            : List.of(content);
-                    int total = chunks.size();
-
-                    return Flux.range(0, total)
-                            .map(i -> {
-                                String chunkId = UUID.randomUUID().toString();
-                                String chunk = chunks.get(i);
-                                Map<String, Object> metaChunk = new HashMap<>(meta);
-                                metaChunk.put(CHUNK_NUMBER_METADATA_KEY, i);
-                                metaChunk.put(TOTAL_CHUNKS_METADATA_KEY, chunks.size());
-                                metaChunk.put(CHUNK_ID_METADATA_KEY, chunkId);
-
-                                store.add(List.of(new Document(chunkId, chunk, metaChunk)));
-
-                                return (int) (((i + 1) / (double) total) * 100);
-                            });
-                });
+        return resolveProvider(command.providerType())
+                .resolveChunks(request)
+                .map(chunk -> persistAndMapProgress(meta, chunk))
+                .switchIfEmpty(Flux.just(100));
     }
 
-    private Mono<String> resolveContent(String text, ProviderType providerType) {
+    private int persistAndMapProgress(Map<String, Object> meta, RagChunk chunk) {
+        String chunkId = UUID.randomUUID().toString();
+        Map<String, Object> metaChunk = new HashMap<>(meta);
+        metaChunk.put(CHUNK_NUMBER_METADATA_KEY, chunk.number());
+        metaChunk.put(TOTAL_CHUNKS_METADATA_KEY, chunk.total());
+        metaChunk.put(CHUNK_ID_METADATA_KEY, chunkId);
+
+        store.add(List.of(new Document(chunkId, chunk.text(), metaChunk)));
+
+        if (chunk.total() <= 0) {
+            return 100;
+        }
+        return (int) (((chunk.number() + 1) / (double) chunk.total()) * 100);
+    }
+
+    private RagContentProvider resolveProvider(ProviderType providerType) {
         ProviderType effectiveProvider = providerType == null ? ProviderType.TEXT : providerType;
-        RagContentProvider contentProvider = contentProviders.stream()
+        return contentProviders.stream()
                 .filter(provider -> provider.supports(effectiveProvider))
                 .findFirst()
                 .orElseThrow(() -> new NoSuchElementException("No content provider for type: " + effectiveProvider));
-        return contentProvider.resolveContent(text);
     }
 
     @Override

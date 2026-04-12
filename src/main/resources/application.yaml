@@ -9,9 +9,6 @@ app:
     rag:
       percentage: 30
       top-k: 100
-      confluence:
-        username: ${CONFLUENCE_USERNAME:}
-        password: ${CONFLUENCE_PASSWORD:}
   configPath: ${CONFIG_PATH:classpath:models}
 
 spring:

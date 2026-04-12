@@ -1,7 +1,7 @@
 package io.github.admiralxy.agent.service.provider;
 
 import io.github.admiralxy.agent.controller.response.documents.ProviderType;
-import reactor.core.publisher.Mono;
+import reactor.core.publisher.Flux;
 
 public interface RagContentProvider {
 
@@ -14,10 +14,11 @@ public interface RagContentProvider {
     boolean supports(ProviderType providerType);
 
     /**
-     * Resolves original request text to final content for indexing.
+     * Resolves request into chunks for indexing.
+     * Each emitted element will be saved as a separate chunk in vector store.
      *
-     * @param text source text from request
-     * @return resolved content
+     * @param request request payload for provider
+     * @return stream of chunks
      */
-    Mono<String> resolveContent(String text);
+    Flux<RagChunk> resolveChunks(RagContentRequest request);
 }

@@ -1,4 +1,10 @@
 package io.github.admiralxy.agent.controller.response.documents;
 
-public record AddToSpaceRq(String text, boolean batch, ProviderType providerType) {
+public record AddToSpaceRq(
+        String text,
+        boolean batch,
+        ProviderType providerType,
+        GitProviderRq git,
+        ProviderAuthRq auth
+) {
 }

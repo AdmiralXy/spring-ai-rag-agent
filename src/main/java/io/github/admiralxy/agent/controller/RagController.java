@@ -3,7 +3,11 @@ package io.github.admiralxy.agent.controller;
 import io.github.admiralxy.agent.controller.response.documents.AddToSpaceRq;
 import io.github.admiralxy.agent.controller.response.documents.GetDocumentsRs;
 import io.github.admiralxy.agent.domain.RagDocument;
+import io.github.admiralxy.agent.service.AddDocumentCommand;
 import io.github.admiralxy.agent.service.RagService;
+import io.github.admiralxy.agent.service.provider.RagContentRequest;
+import io.github.admiralxy.agent.service.provider.RagGitOptions;
+import io.github.admiralxy.agent.service.provider.RagProviderAuth;
 import lombok.RequiredArgsConstructor;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -35,12 +39,27 @@ public class RagController {
         SseEmitter emitter = new SseEmitter(240_000L);
         CompletableFuture.runAsync(() -> {
             try {
-                subscribeToProgress(emitter, ragService.add(space, rq.text(), rq.batch(), rq.providerType()));
+                subscribeToProgress(
+                        emitter,
+                        ragService.add(toAddCommand(space, rq))
+                );
             } catch (Exception e) {
                 emitter.completeWithError(e);
             }
         }, taskExecutor);
         return emitter;
+    }
+
+    private AddDocumentCommand toAddCommand(String space, AddToSpaceRq rq) {
+        RagGitOptions gitOptions = rq.git() == null
+                ? null
+                : new RagGitOptions(rq.git().branch(), rq.git().folder());
+        RagProviderAuth auth = rq.auth() == null
+                ? null
+                : new RagProviderAuth(rq.auth().login(), rq.auth().password());
+
+        RagContentRequest contentRequest = new RagContentRequest(rq.text(), rq.batch(), gitOptions, auth);
+        return new AddDocumentCommand(space, rq.providerType(), contentRequest);
     }
 
     void subscribeToProgress(SseEmitter emitter, Flux<Integer> progressFlux) {

@@ -2,10 +2,13 @@ package io.github.admiralxy.agent.service.provider.impl;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
-import io.github.admiralxy.agent.config.properties.ConfluenceProperties;
-import io.github.admiralxy.agent.config.properties.RagProperties;
 import io.github.admiralxy.agent.controller.response.documents.ProviderType;
+import io.github.admiralxy.agent.service.TextChunkerService;
+import io.github.admiralxy.agent.service.provider.RagChunk;
+import io.github.admiralxy.agent.service.provider.RagContentRequest;
+import io.github.admiralxy.agent.service.provider.RagProviderAuth;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import reactor.test.StepVerifier;
 
 import java.io.IOException;
@@ -27,14 +30,14 @@ class ConfluenceRagContentProviderTest {
 
     @Test
     void supportsConfluenceOnly() {
-        ConfluenceRagContentProvider provider = new ConfluenceRagContentProvider(withCredentials(USERNAME, PASSWORD));
+        ConfluenceRagContentProvider provider = new ConfluenceRagContentProvider(noOpChunker());
         assertTrue(provider.supports(ProviderType.CONFLUENCE));
         assertFalse(provider.supports(ProviderType.TEXT));
     }
 
     @Test
     void resolveContentReturnsTitleAndStorageValue() throws IOException {
-        ConfluenceRagContentProvider provider = new ConfluenceRagContentProvider(withCredentials(USERNAME, PASSWORD));
+        ConfluenceRagContentProvider provider = new ConfluenceRagContentProvider(noOpChunker());
         AtomicReference<String> authorizationRef = new AtomicReference<>();
         HttpServer server = createServer(200, """
                 {
@@ -49,8 +52,8 @@ class ConfluenceRagContentProviderTest {
         server.start();
 
         try {
-            StepVerifier.create(provider.resolveContent(buildUrl(server)))
-                    .expectNext("Стенды\n\n<p>Контент</p>")
+            StepVerifier.create(provider.resolveChunks(request(buildUrl(server), USERNAME, PASSWORD)))
+                    .expectNext(new RagChunk("Стенды\n\n<p>Контент</p>", 0, 1))
                     .verifyComplete();
             assertEquals(expectedBasicAuth(USERNAME, PASSWORD), authorizationRef.get());
         } finally {
@@ -60,12 +63,12 @@ class ConfluenceRagContentProviderTest {
 
     @Test
     void resolveContentThrowsOnNonSuccessfulStatus() throws IOException {
-        ConfluenceRagContentProvider provider = new ConfluenceRagContentProvider(withCredentials(USERNAME, PASSWORD));
+        ConfluenceRagContentProvider provider = new ConfluenceRagContentProvider(noOpChunker());
         HttpServer server = createServer(500, "{}", null);
         server.start();
 
         try {
-            StepVerifier.create(provider.resolveContent(buildUrl(server)))
+            StepVerifier.create(provider.resolveChunks(request(buildUrl(server), USERNAME, PASSWORD)))
                     .expectError(IllegalStateException.class)
                     .verify();
         } finally {
@@ -75,12 +78,12 @@ class ConfluenceRagContentProviderTest {
 
     @Test
     void resolveContentThrowsOnInvalidJson() throws IOException {
-        ConfluenceRagContentProvider provider = new ConfluenceRagContentProvider(withCredentials(USERNAME, PASSWORD));
+        ConfluenceRagContentProvider provider = new ConfluenceRagContentProvider(noOpChunker());
         HttpServer server = createServer(200, "not-json", null);
         server.start();
 
         try {
-            StepVerifier.create(provider.resolveContent(buildUrl(server)))
+            StepVerifier.create(provider.resolveChunks(request(buildUrl(server), USERNAME, PASSWORD)))
                     .expectError(IllegalStateException.class)
                     .verify();
         } finally {
@@ -90,9 +93,9 @@ class ConfluenceRagContentProviderTest {
 
     @Test
     void resolveContentThrowsWhenCredentialsAreMissing() {
-        ConfluenceRagContentProvider provider = new ConfluenceRagContentProvider(withCredentials("", ""));
+        ConfluenceRagContentProvider provider = new ConfluenceRagContentProvider(noOpChunker());
 
-        StepVerifier.create(provider.resolveContent("http://localhost:8080"))
+        StepVerifier.create(provider.resolveChunks(request("http://localhost:8080", "", "")))
                 .expectError(IllegalStateException.class)
                 .verify();
     }
@@ -119,13 +122,15 @@ class ConfluenceRagContentProviderTest {
         exchange.close();
     }
 
-    private RagProperties withCredentials(String username, String password) {
-        RagProperties ragProperties = new RagProperties();
-        ConfluenceProperties confluenceProperties = new ConfluenceProperties();
-        confluenceProperties.setUsername(username);
-        confluenceProperties.setPassword(password);
-        ragProperties.setConfluence(confluenceProperties);
-        return ragProperties;
+    private RagContentRequest request(String url, String login, String password) {
+        return new RagContentRequest(url, false, null, new RagProviderAuth(login, password));
+    }
+
+    private TextChunkerService noOpChunker() {
+        TextChunkerService chunker = Mockito.mock(TextChunkerService.class);
+        Mockito.when(chunker.chunk(Mockito.anyString(), Mockito.anyInt(), Mockito.anyInt(), Mockito.anyInt()))
+                .thenReturn(java.util.List.of());
+        return chunker;
     }
 
     private String expectedBasicAuth(String username, String password) {
