@@ -188,7 +188,7 @@ class RagServiceImplTest {
         when(tokenizerService.splitToTokenChunks("too-big", 5)).thenReturn(List.of("small-1", "small-2"));
 
         AtomicInteger call = new AtomicInteger();
-        doAnswer(invocation -> {
+        doAnswer(ignored -> {
             int current = call.incrementAndGet();
             if (current == 1) {
                 throw new RuntimeException("Tokens in a single document exceeds the maximum number of allowed input tokens");
