@@ -1,7 +1,9 @@
 package io.github.admiralxy.agent.entity;
 
+import io.github.admiralxy.agent.entity.converter.ListStringConverter;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
@@ -34,7 +36,8 @@ public class ConversationEntity {
     private String title;
 
     @Column(name = "c_rag_space")
-    private String ragSpace;
+    @Convert(converter = ListStringConverter.class)
+    private List<String> ragSpaces = new ArrayList<>();
 
     @Column(name = "c_model_name")
     private String modelName;

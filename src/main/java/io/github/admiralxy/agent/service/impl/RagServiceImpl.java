@@ -17,11 +17,17 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.Queue;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -31,6 +37,7 @@ public class RagServiceImpl implements RagService {
     private static final String CONTENT_CONTENT_SEPARATOR = "\n---\n";
 
     private static final String SPACE_FILTER_EXPRESSION_TEMPLATE = "space == '%s'";
+    private static final String SPACE_FILTER_PART_EXPRESSION_TEMPLATE = "space == '%s'";
     private static final String ID_SPACE_FILTER_EXPRESSION_TEMPLATE = "doc == '%s' && space == '%s'";
     private static final String ID_CHUNK_SPACE_FILTER_EXPRESSION_TEMPLATE = "doc == '%s' && chunk == '%s' && space == '%s'";
 
@@ -40,6 +47,10 @@ public class RagServiceImpl implements RagService {
     private static final String CHUNK_NUMBER_METADATA_KEY = "number";
     private static final String TOTAL_CHUNKS_METADATA_KEY = "total";
     private static final String TOKEN_LIMIT_ERROR_FRAGMENT = "maximum number of allowed input tokens";
+    private static final int MAX_CONTEXT_OVERFETCH = 200;
+    private static final int REBALANCE_CANDIDATE_WINDOW_MULTIPLIER = 2;
+    private static final String UNKNOWN_SOURCE_VALUE = "unknown";
+    private static final String SOURCE_HEADER_TEMPLATE = "[Source: space=%s, doc=%s, chunk=%s]";
 
     private final VectorStore store;
     private final TokenizerService tokenizerService;
@@ -203,14 +214,8 @@ public class RagServiceImpl implements RagService {
     }
 
     @Override
-    public String buildContext(String spaceId, String query, double percentage, int maxTokens, int topK) {
-        List<Document> docs = store.similaritySearch(
-                SearchRequest.builder()
-                        .query(query)
-                        .topK(topK)
-                        .filterExpression(SPACE_FILTER_EXPRESSION_TEMPLATE.formatted(spaceId))
-                        .build()
-        );
+    public String buildContext(List<String> spaceIds, String query, double percentage, int maxTokens, int topK) {
+        List<Document> docs = findContextDocuments(spaceIds, query, topK);
 
         if (docs.isEmpty()) {
             return StringUtils.EMPTY;
@@ -220,31 +225,188 @@ public class RagServiceImpl implements RagService {
                 .mapToInt(d -> tokenizerService.countTokens(d.getText()))
                 .sum();
 
-        int targetTokens = totalTokens;
-        if (totalTokens > maxTokens) {
-            targetTokens = (int) (totalTokens * (percentage / 100.0));
-            targetTokens = Math.min(maxTokens, targetTokens);
+        int hardLimit = Math.min(maxTokens, totalTokens);
+        double normalizedPercentage = Math.clamp(percentage, 0.0, 100.0);
+        int targetTokens = (int) Math.floor(hardLimit * (normalizedPercentage / 100.0));
+        if (hardLimit > 0 && targetTokens == 0 && normalizedPercentage > 0) {
+            targetTokens = 1;
         }
 
         StringBuilder sb = new StringBuilder();
         int used = 0;
 
-        for (Document doc : docs) {
-            String content = doc.getText();
-            int len = tokenizerService.countTokens(content);
-
-            if (used + len > targetTokens) {
-                int remaining = targetTokens - used;
-                if (remaining > 0) {
-                    sb.append(tokenizerService.truncateToTokens(content, remaining));
-                }
+        for (int i = 0; i < docs.size(); i++) {
+            Document doc = docs.get(i);
+            int docsLeft = docs.size() - i;
+            int remaining = targetTokens - used;
+            if (remaining <= 0) {
                 break;
             }
 
-            sb.append(content).append(CONTENT_CONTENT_SEPARATOR);
-            used += len;
+            int perDocumentBudget = Math.max(1, remaining / docsLeft);
+            String content = doc.getText();
+            int len = tokenizerService.countTokens(content);
+            String contentPart = len > perDocumentBudget
+                    ? tokenizerService.truncateToTokens(content, perDocumentBudget)
+                    : content;
+
+            if (StringUtils.isBlank(contentPart)) {
+                continue;
+            }
+
+            sb.append(buildSourceHeader(doc))
+                    .append(StringUtils.LF)
+                    .append(contentPart)
+                    .append(CONTENT_CONTENT_SEPARATOR);
+            used += tokenizerService.countTokens(contentPart);
         }
 
         return sb.toString();
+    }
+
+    private List<Document> findContextDocuments(List<String> spaceIds, String query, int topK) {
+        if (topK <= 0) {
+            return Collections.emptyList();
+        }
+
+        List<String> normalizedSpaceIds = normalizeSpaceIds(spaceIds);
+        if (normalizedSpaceIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        long requestedOverfetch = (long) topK * normalizedSpaceIds.size();
+        int overfetch = (int) Math.clamp(requestedOverfetch, topK, (long) MAX_CONTEXT_OVERFETCH);
+        List<Document> docs = store.similaritySearch(
+                SearchRequest.builder()
+                        .query(query)
+                        .topK(overfetch)
+                        .filterExpression(buildMultiSpaceFilterExpression(normalizedSpaceIds))
+                        .build()
+        );
+
+        if (docs.size() <= topK || normalizedSpaceIds.size() == 1) {
+            return docs.stream().limit(topK).toList();
+        }
+
+        // Preserve global relevance order and only lightly improve source coverage.
+        List<Document> selected = new ArrayList<>(docs.stream().limit(topK).toList());
+        rebalanceTailForMissingSpaces(selected, docs, normalizedSpaceIds, topK);
+        return selected;
+    }
+
+    private void rebalanceTailForMissingSpaces(List<Document> selected, List<Document> rankedDocs, List<String> spaceIds, int topK) {
+        Set<String> presentSpaces = new HashSet<>();
+        selected.stream()
+                .map(this::extractSpaceId)
+                .filter(Objects::nonNull)
+                .forEach(presentSpaces::add);
+
+        List<String> missingSpaces = spaceIds.stream()
+                .filter(spaceId -> !presentSpaces.contains(spaceId))
+                .toList();
+        if (missingSpaces.isEmpty()) {
+            return;
+        }
+
+        Map<String, Document> firstByMissingSpace = new LinkedHashMap<>();
+        int candidateWindow = (int) Math.clamp(
+                (long) topK * REBALANCE_CANDIDATE_WINDOW_MULTIPLIER,
+                topK,
+                (long) rankedDocs.size()
+        );
+        for (int i = 0; i < candidateWindow; i++) {
+            Document doc = rankedDocs.get(i);
+            String spaceId = extractSpaceId(doc);
+            if (spaceId != null
+                    && !firstByMissingSpace.containsKey(spaceId)
+                    && missingSpaces.contains(spaceId)) {
+                firstByMissingSpace.put(spaceId, doc);
+            }
+        }
+
+        if (firstByMissingSpace.isEmpty()) {
+            return;
+        }
+
+        Map<String, Integer> selectedCountBySpace = new HashMap<>();
+        for (Document doc : selected) {
+            String spaceId = extractSpaceId(doc);
+            if (spaceId == null) {
+                continue;
+            }
+            selectedCountBySpace.merge(spaceId, 1, Integer::sum);
+        }
+
+        for (String missingSpace : missingSpaces) {
+            Document candidate = firstByMissingSpace.get(missingSpace);
+            if (candidate == null) {
+                continue;
+            }
+
+            int replaceIdx = findTailIndexForReplacement(selected, selectedCountBySpace, candidate.getId());
+            if (replaceIdx < 0) {
+                continue;
+            }
+
+            Document replaced = selected.set(replaceIdx, candidate);
+            String replacedSpace = extractSpaceId(replaced);
+            if (replacedSpace != null) {
+                selectedCountBySpace.computeIfPresent(replacedSpace, (ignoredKey, v) -> Math.max(0, v - 1));
+            }
+            selectedCountBySpace.merge(missingSpace, 1, Integer::sum);
+        }
+    }
+
+    private int findTailIndexForReplacement(List<Document> selected, Map<String, Integer> countBySpace, String candidateId) {
+        Set<String> selectedIds = selected.stream().map(Document::getId).collect(java.util.stream.Collectors.toSet());
+        if (selectedIds.contains(candidateId)) {
+            return -1;
+        }
+
+        for (int i = selected.size() - 1; i >= 0; i--) {
+            Document doc = selected.get(i);
+            String spaceId = extractSpaceId(doc);
+            if (spaceId == null) {
+                continue;
+            }
+            if (countBySpace.getOrDefault(spaceId, 0) > 1) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private List<String> normalizeSpaceIds(List<String> spaceIds) {
+        if (spaceIds == null || spaceIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return spaceIds.stream()
+                .filter(StringUtils::isNotBlank)
+                .map(String::trim)
+                .distinct()
+                .toList();
+    }
+
+    private String buildMultiSpaceFilterExpression(List<String> spaceIds) {
+        return spaceIds.stream()
+                .map(spaceId -> SPACE_FILTER_PART_EXPRESSION_TEMPLATE.formatted(spaceId.replace("'", "''")))
+                .reduce((left, right) -> left + " || " + right)
+                .orElse("1 == 0");
+    }
+
+    private String extractSpaceId(Document doc) {
+        Object raw = doc.getMetadata().get(SPACE_METADATA_KEY);
+        return raw == null ? null : String.valueOf(raw);
+    }
+
+    private String buildSourceHeader(Document doc) {
+        String space = valueOrUnknown(doc.getMetadata().get(SPACE_METADATA_KEY));
+        String sourceDocId = valueOrUnknown(doc.getMetadata().get(ID_METADATA_KEY));
+        String chunk = valueOrUnknown(doc.getMetadata().get(CHUNK_ID_METADATA_KEY));
+        return SOURCE_HEADER_TEMPLATE.formatted(space, sourceDocId, chunk);
+    }
+
+    private String valueOrUnknown(Object value) {
+        return value == null ? UNKNOWN_SOURCE_VALUE : String.valueOf(value);
     }
 }

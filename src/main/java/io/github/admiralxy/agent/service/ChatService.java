@@ -17,15 +17,15 @@ public interface ChatService {
      * @param size page size
      * @return all chats
      */
-    Page<Chat> getAll(int size);
+    Page<Chat> getAll(int page, int size);
 
     /**
-     * Create chat with specified RAG space.
+     * Create chat with specified RAG spaces.
      *
-     * @param ragSpace RAG space name
+     * @param ragSpaces RAG space names
      * @return pair of chat ID and chat title
      */
-    Pair<UUID, String> create(String ragSpace);
+    Pair<UUID, String> create(List<String> ragSpaces);
 
     /**
      * Updates the model name associated with the specified chat.

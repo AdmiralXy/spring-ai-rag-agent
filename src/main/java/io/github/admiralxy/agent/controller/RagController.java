@@ -23,7 +23,6 @@ import reactor.core.publisher.Flux;
 
 import java.io.IOException;
 import java.util.List;
-import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
 @RestController
@@ -107,7 +106,7 @@ public class RagController {
     ) {
         List<RagDocument> documents = ragService.listDocuments(space, limit).stream()
                 .map(d -> new RagDocument(d.getId(),
-                        Objects.requireNonNull(d.getText()).substring(0, Math.min(3000, d.getText().length())) + "...",
+                        d.getText(),
                         d.getMetadata()))
                 .toList();
 

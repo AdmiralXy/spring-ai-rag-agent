@@ -67,19 +67,19 @@ public class ChatServiceImpl implements ChatService {
     private String titlePromptTemplate;
 
     @Override
-    public Page<Chat> getAll(int size) {
-        Pageable page = PageRequest.of(0, size, Sort.by(Sort.Direction.DESC, SORT_DIRECTION_COLUMN));
-        return conversationRepository.findAll(page)
-                .map(chat -> new Chat(chat.getId(), chat.getTitle(), chat.getModelName(), chat.getRagSpace()));
+    public Page<Chat> getAll(int page, int size) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, SORT_DIRECTION_COLUMN));
+        return conversationRepository.findAll(pageable)
+                .map(chat -> new Chat(chat.getId(), chat.getTitle(), chat.getModelName(), chat.getRagSpaces()));
     }
 
     @Override
-    public Pair<UUID, String> create(String ragSpace) {
+    public Pair<UUID, String> create(List<String> ragSpaces) {
         String title = String.valueOf(Instant.now().toEpochMilli());
         ConversationEntity conversation = new ConversationEntity();
         conversation.setTitle(title);
         conversation.setTitleGenerated(false);
-        conversation.setRagSpace(ragSpace);
+        conversation.setRagSpaces(ragSpaces);
         conversationRepository.save(conversation);
 
         return Pair.of(conversation.getId(), title);
@@ -112,7 +112,7 @@ public class ChatServiceImpl implements ChatService {
                     generateChatTitleIfFirstMessage(conv, text);
 
                     String context = ragService.buildContext(
-                            conv.getRagSpace(), text,
+                            conv.getRagSpaces(), text,
                             ragProperties.getPercentage(),
                             properties.getMaxContextTokens() / 2,
                             ragProperties.getTopK()
@@ -154,8 +154,8 @@ public class ChatServiceImpl implements ChatService {
                             });
 
                     ConnectableFlux<String> hot = tapped.replay();
-                    Disposable keeper = hot.subscribe();
-                    Disposable conn = hot.connect();
+                    Disposable ignored1 = hot.subscribe();
+                    Disposable ignored2 = hot.connect();
 
                     return hot
                             .scan(new StringBuilder(), StringBuilder::append)

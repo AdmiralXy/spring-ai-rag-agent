@@ -1,4 +1,6 @@
 package io.github.admiralxy.agent.controller.request.chat;
 
-public record CreateChatRq(String ragSpace) {
+import java.util.List;
+
+public record CreateChatRq(List<String> ragSpaces) {
 }

@@ -22,7 +22,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -37,6 +38,7 @@ import static org.mockito.Mockito.when;
 class RagServiceImplTest {
 
     private static final String SPACE_ID = "space-1";
+    private static final String SPACE_ID_2 = "space-2";
 
     @Mock
     private VectorStore store;
@@ -149,15 +151,66 @@ class RagServiceImplTest {
     @Test
     void buildContextUsesTokenizerService() {
         // GIVEN
-        when(store.similaritySearch(any(SearchRequest.class))).thenReturn(List.of(new Document("d1", "alpha", Map.of())));
-        when(tokenizerService.countTokens("alpha")).thenReturn(1);
+        when(store.similaritySearch(any(SearchRequest.class))).thenReturn(
+                List.of(new Document("d1", "alpha",
+                Map.of("space", SPACE_ID, "doc", "d1", "chunk", "c1")))
+        );
+        when(tokenizerService.countTokens(any())).thenReturn(1);
 
         // WHEN
-        String result = ragService.buildContext(SPACE_ID, "q", 100.0, 100, 1);
+        String result = ragService.buildContext(List.of(SPACE_ID), "q", 100.0, 100, 1);
 
         // THEN
-        assertEquals("alpha\n---\n", result);
-        verify(tokenizerService, times(2)).countTokens("alpha");
+        assertTrue(result.contains("[Source: space=space-1, doc=d1, chunk=c1]"));
+        assertTrue(result.contains("alpha"));
+    }
+
+    @Test
+    void buildContextKeepsTopOrderAndAddsSourceHeaders() {
+        // GIVEN
+        List<Document> docs = List.of(
+                new Document("a1", "a1", Map.of("space", SPACE_ID, "doc", "da1", "chunk", "ca1")),
+                new Document("a2", "a2", Map.of("space", SPACE_ID, "doc", "da2", "chunk", "ca2")),
+                new Document("b1", "b1", Map.of("space", SPACE_ID_2, "doc", "db1", "chunk", "cb1")),
+                new Document("a3", "a3", Map.of("space", SPACE_ID, "doc", "da3", "chunk", "ca3")),
+                new Document("b2", "b2", Map.of("space", SPACE_ID_2, "doc", "db2", "chunk", "cb2"))
+        );
+        when(store.similaritySearch(any(SearchRequest.class))).thenReturn(docs);
+        when(tokenizerService.countTokens(any())).thenReturn(1);
+
+        // WHEN
+        String result = ragService.buildContext(List.of(SPACE_ID, SPACE_ID_2), "q", 100.0, 100, 3);
+
+        // THEN
+        assertTrue(result.indexOf("a1") < result.indexOf("a2"));
+        assertTrue(result.indexOf("a2") < result.indexOf("b1"));
+        assertTrue(result.contains("[Source: space=space-1, doc=da1, chunk=ca1]"));
+        assertTrue(result.contains("[Source: space=space-2, doc=db1, chunk=cb1]"));
+    }
+
+    @Test
+    void buildContextDoesNotUseDeepRebalanceCandidates() {
+        // GIVEN
+        List<Document> docs = List.of(
+                new Document("a1", "A1", Map.of("space", SPACE_ID, "doc", "da1", "chunk", "ca1")),
+                new Document("a2", "A2", Map.of("space", SPACE_ID, "doc", "da2", "chunk", "ca2")),
+                new Document("a3", "A3", Map.of("space", SPACE_ID, "doc", "da3", "chunk", "ca3")),
+                new Document("a4", "A4", Map.of("space", SPACE_ID, "doc", "da4", "chunk", "ca4")),
+                new Document("a5", "A5", Map.of("space", SPACE_ID, "doc", "da5", "chunk", "ca5")),
+                new Document("a6", "A6", Map.of("space", SPACE_ID, "doc", "da6", "chunk", "ca6")),
+                new Document("b1", "B-CONTENT", Map.of("space", SPACE_ID_2, "doc", "db1", "chunk", "cb1"))
+        );
+        when(store.similaritySearch(any(SearchRequest.class))).thenReturn(docs);
+        when(tokenizerService.countTokens(any())).thenReturn(1);
+
+        // WHEN
+        String result = ragService.buildContext(List.of(SPACE_ID, SPACE_ID_2), "q", 100.0, 100, 3);
+
+        // THEN
+        assertFalse(result.contains("B-CONTENT"));
+        assertTrue(result.contains("A1"));
+        assertTrue(result.contains("A2"));
+        assertTrue(result.contains("A3"));
     }
 
     @Test

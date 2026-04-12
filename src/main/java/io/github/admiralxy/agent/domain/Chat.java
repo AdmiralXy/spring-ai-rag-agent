@@ -1,6 +1,7 @@
 package io.github.admiralxy.agent.domain;
 
+import java.util.List;
 import java.util.UUID;
 
-public record Chat(UUID id, String title, String modelName, String ragSpace) {
+public record Chat(UUID id, String title, String modelName, List<String> ragSpaces) {
 }

@@ -31,13 +31,13 @@ public class ChatController {
     private final ChatService chatService;
 
     @GetMapping
-    public GetChatsRs getAll(@RequestParam(defaultValue = "10") int size) {
-        return new GetChatsRs(chatService.getAll(size));
+    public GetChatsRs getAll(@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "10") int size) {
+        return new GetChatsRs(chatService.getAll(page, size));
     }
 
     @PostMapping
     public CreateChatRs create(@RequestBody CreateChatRq rq) {
-        var chat = chatService.create(rq.ragSpace());
+        var chat = chatService.create(rq.ragSpaces());
         return new CreateChatRs(chat.getKey(), chat.getValue());
     }
 

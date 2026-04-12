@@ -66,14 +66,14 @@ public interface RagService {
     void deleteChunkFromSpace(String spaceId, String docId, String chunkId);
 
     /**
-     * Build context from documents in a specific space based on a query.
+     * Build context from documents in specific spaces based on a query.
      *
-     * @param spaceId space ID
+     * @param spaceIds space IDs
      * @param query query
      * @param percentage percentage of the document to include
      * @param maxChars maximum number of characters in the context
      * @param topK number of top documents to consider
      * @return context string
      */
-    String buildContext(String spaceId, String query, double percentage, int maxChars, int topK);
+    String buildContext(List<String> spaceIds, String query, double percentage, int maxChars, int topK);
 }
