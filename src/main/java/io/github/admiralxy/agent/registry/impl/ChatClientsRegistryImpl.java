@@ -1,64 +1,90 @@
 package io.github.admiralxy.agent.registry.impl;
 
-import io.github.admiralxy.agent.config.properties.AppProperties;
-import io.github.admiralxy.agent.config.properties.ModelProperties;
-import io.github.admiralxy.agent.config.properties.ModelsProperties;
+import io.github.admiralxy.agent.entity.ChatModelSettingsEntity;
+import io.github.admiralxy.agent.entity.SummarizerModelSettingsEntity;
 import io.github.admiralxy.agent.registry.ChatClientsRegistry;
+import io.github.admiralxy.agent.registry.ChatModelRuntimeProperties;
+import io.github.admiralxy.agent.repository.ChatModelSettingsRepository;
+import io.github.admiralxy.agent.repository.SummarizerModelSettingsRepository;
+import io.github.admiralxy.agent.service.model.ChatModelClientFactory;
 import lombok.RequiredArgsConstructor;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.UUID;
 
 @Component
 @RequiredArgsConstructor
 public class ChatClientsRegistryImpl implements ChatClientsRegistry {
 
-    private final Map<String, ChatClient> chatClients;
-    private final AppProperties props;
+    private static final short SUMMARIZER_SINGLETON_ID = 1;
+
+    private final ChatModelSettingsRepository chatModelRepository;
+    private final SummarizerModelSettingsRepository summarizerRepository;
+    private final ChatModelClientFactory chatModelClientFactory;
+    private final ChatMemory chatMemory;
 
     @Override
-    public boolean contains(String alias) {
-        return chatClients.containsKey(alias);
+    public boolean contains(String modelId) {
+        return resolveChatModel(modelId).isPresent();
     }
 
     @Override
-    public ChatClient getChatClient(String alias) {
-        return chatClients.get(alias);
+    public ChatClient getChatClient(String modelId) {
+        ChatModelSettingsEntity entity = resolveChatModel(modelId)
+                .orElseThrow(() -> new IllegalArgumentException("Chat model not found: " + modelId));
+
+        return chatModelClientFactory.createWithMemory(
+                entity.getProvider(),
+                entity.getName(),
+                entity.getBaseUrl(),
+                entity.getApiKey(),
+                entity.isStreaming(),
+                entity.getTemperature(),
+                chatMemory
+        );
     }
 
     @Override
-    public ModelProperties getProperties(String alias) {
-        return props.getModels().stream()
-                .filter(modelsProperties -> alias.equals(modelsProperties.getAlias()))
-                .findFirst()
-                .map(ModelsProperties::getProperties)
-                .orElseThrow();
+    public ChatModelRuntimeProperties getProperties(String modelId) {
+        ChatModelSettingsEntity entity = resolveChatModel(modelId)
+                .orElseThrow(() -> new IllegalArgumentException("Chat model not found: " + modelId));
+
+        return new ChatModelRuntimeProperties(
+                entity.isStreaming(),
+                entity.getMaxContextTokens(),
+                entity.getSystemPrompt()
+        );
     }
 
     @Override
-    public Optional<String> getSummarizerAlias() {
-        List<String> summarizers = props.getModels().stream()
-                .filter(ModelsProperties::isSummarizer)
-                .map(ModelsProperties::getAlias)
-                .filter(chatClients::containsKey)
-                .toList();
+    public Optional<ChatClient> getSummarizerClient() {
+        return summarizerRepository.findById(SUMMARIZER_SINGLETON_ID)
+                .map(entity -> chatModelClientFactory.create(
+                        entity.getProvider(),
+                        entity.getName(),
+                        entity.getBaseUrl(),
+                        entity.getApiKey(),
+                        false,
+                        0.0
+                ));
+    }
 
-        if (!summarizers.isEmpty()) {
-            int idx = ThreadLocalRandom.current().nextInt(summarizers.size());
-            return Optional.of(summarizers.get(idx));
+    @Override
+    public Optional<String> getSummarizerSystemPrompt() {
+        return summarizerRepository.findById(SUMMARIZER_SINGLETON_ID)
+                .map(SummarizerModelSettingsEntity::getSystemPrompt);
+    }
+
+    private Optional<ChatModelSettingsEntity> resolveChatModel(String modelId) {
+        try {
+            UUID id = UUID.fromString(modelId);
+            return chatModelRepository.findById(id);
+        } catch (IllegalArgumentException ignored) {
+            return chatModelRepository.findFirstByNameIgnoreCase(modelId)
+                    .or(() -> chatModelRepository.findFirstByLabelIgnoreCase(modelId));
         }
-
-        List<String> aliases = new ArrayList<>(chatClients.keySet());
-        if (aliases.isEmpty()) {
-            return Optional.empty();
-        }
-
-        int idx = ThreadLocalRandom.current().nextInt(aliases.size());
-        return Optional.of(aliases.get(idx));
     }
 }

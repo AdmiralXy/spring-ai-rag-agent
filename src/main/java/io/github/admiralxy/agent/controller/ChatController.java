@@ -43,7 +43,7 @@ public class ChatController {
 
     @PostMapping(value = "/{id}/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<String> streamChat(@PathVariable UUID id, @RequestBody StreamChatRq rq) {
-        return chatService.send(id, rq.modelName(), rq.text());
+        return chatService.send(id, rq.modelId(), rq.text());
     }
 
     @GetMapping("/{id}/history")
@@ -53,7 +53,7 @@ public class ChatController {
 
     @PatchMapping("/{id}/model")
     public UpdateModelRs updateModel(@PathVariable UUID id, @RequestBody UpdateModelRq rq) {
-        return new UpdateModelRs(chatService.updateModelName(id, rq.modelAlias()));
+        return new UpdateModelRs(chatService.updateModelName(id, rq.modelId()));
     }
 
     @DeleteMapping("/{id}")

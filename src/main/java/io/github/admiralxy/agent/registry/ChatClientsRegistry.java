@@ -1,6 +1,5 @@
 package io.github.admiralxy.agent.registry;
 
-import io.github.admiralxy.agent.config.properties.ModelProperties;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Component;
 
@@ -12,31 +11,38 @@ public interface ChatClientsRegistry {
     /**
      * Checks if a chat client for the given model name exists.
      *
-     * @param alias model alias
+     * @param modelId model id or legacy name
      * @return {@code true} if the model is registered, otherwise {@code false}
      */
-    boolean contains(String alias);
+    boolean contains(String modelId);
 
     /**
      * Returns the {@link ChatClient} associated with the given model name.
      *
-     * @param alias model alias
+     * @param modelId model id or legacy name
      * @return chat client
      */
-    ChatClient getChatClient(String alias);
+    ChatClient getChatClient(String modelId);
 
     /**
-     * Returns the {@link ModelProperties} for the specified model.
+     * Returns runtime properties for the specified model.
      *
-     * @param alias model alias
+     * @param modelId model id or legacy name
      * @return configuration properties
      */
-    ModelProperties getProperties(String alias);
+    ChatModelRuntimeProperties getProperties(String modelId);
 
     /**
-     * Returns random configured summarizer alias. If no summarizer configured, returns random available alias.
+     * Returns summarizer chat client if configured.
      *
-     * @return alias for chat title summarization
+     * @return chat client for chat title summarization
      */
-    Optional<String> getSummarizerAlias();
+    Optional<ChatClient> getSummarizerClient();
+
+    /**
+     * Returns system prompt for summarizer model.
+     *
+     * @return optional prompt
+     */
+    Optional<String> getSummarizerSystemPrompt();
 }

@@ -27,6 +27,9 @@ public class SpaceEntity {
     @Column(name = "c_name", nullable = false)
     private String name;
 
+    @Column(name = "c_dimensions", nullable = false)
+    private int dimensions;
+
     @CreationTimestamp
     @Column(name = "c_created_at", nullable = false)
     private Instant createdAt;

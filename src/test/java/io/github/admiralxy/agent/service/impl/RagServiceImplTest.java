@@ -1,9 +1,11 @@
 package io.github.admiralxy.agent.service.impl;
 
-import io.github.admiralxy.agent.config.properties.RagProperties;
 import io.github.admiralxy.agent.controller.response.documents.ProviderType;
+import io.github.admiralxy.agent.entity.EmbeddingModelProviderType;
+import io.github.admiralxy.agent.entity.EmbeddingsModelSettingsEntity;
 import io.github.admiralxy.agent.service.AddDocumentCommand;
 import io.github.admiralxy.agent.service.TokenizerService;
+import io.github.admiralxy.agent.service.model.ModelSettingsService;
 import io.github.admiralxy.agent.service.provider.RagChunk;
 import io.github.admiralxy.agent.service.provider.RagContentProvider;
 import io.github.admiralxy.agent.service.provider.RagContentRequest;
@@ -44,7 +46,10 @@ class RagServiceImplTest {
     private VectorStore store;
 
     private TokenizerService tokenizerService;
-    private RagProperties ragProperties;
+    private EmbeddingsModelSettingsEntity embeddingsModel;
+
+    @Mock
+    private ModelSettingsService modelSettingsService;
 
     @Mock
     private RagContentProvider textContentProvider;
@@ -57,14 +62,16 @@ class RagServiceImplTest {
     @BeforeEach
     void setUp() {
         tokenizerService = org.mockito.Mockito.mock(TokenizerService.class);
-        ragProperties = new RagProperties();
-        ragProperties.setMaxDocumentTokens(8000);
+        embeddingsModel = new EmbeddingsModelSettingsEntity();
+        embeddingsModel.setProvider(EmbeddingModelProviderType.OPENAI);
+        embeddingsModel.setMaxDocumentTokens(8000);
+        lenient().when(modelSettingsService.getEmbeddingsModel()).thenReturn(embeddingsModel);
         lenient().when(tokenizerService.splitToTokenChunks(any(), anyInt()))
                 .thenAnswer(invocation -> List.of(invocation.getArgument(0, String.class)));
         ragService = new RagServiceImpl(
                 store,
                 tokenizerService,
-                ragProperties,
+                modelSettingsService,
                 List.of(textContentProvider, confluenceContentProvider)
         );
     }
@@ -219,7 +226,7 @@ class RagServiceImplTest {
         when(textContentProvider.supports(ProviderType.TEXT)).thenReturn(true);
         when(textContentProvider.resolveChunks(any())).thenReturn(Flux.just(new RagChunk("big chunk", 0, 1)));
         when(tokenizerService.splitToTokenChunks("big chunk", 2)).thenReturn(List.of("part-1", "part-2"));
-        ragProperties.setMaxDocumentTokens(2);
+        embeddingsModel.setMaxDocumentTokens(2);
 
         // WHEN
         Flux<Integer> result = ragService.add(command(ProviderType.TEXT, "x", false));

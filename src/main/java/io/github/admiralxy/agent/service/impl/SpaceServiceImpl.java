@@ -5,6 +5,7 @@ import io.github.admiralxy.agent.entity.SpaceEntity;
 import io.github.admiralxy.agent.repository.SpaceRepository;
 import io.github.admiralxy.agent.service.RagService;
 import io.github.admiralxy.agent.service.SpaceService;
+import io.github.admiralxy.agent.service.model.ModelSettingsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -24,6 +25,7 @@ public class SpaceServiceImpl implements SpaceService {
 
     private final SpaceRepository spaceRepository;
     private final RagService ragService;
+    private final ModelSettingsService modelSettingsService;
 
     @Override
     public Page<Space> getAll(int size) {
@@ -36,6 +38,7 @@ public class SpaceServiceImpl implements SpaceService {
     public Space create(String name) {
         SpaceEntity space = new SpaceEntity();
         space.setName(name);
+        space.setDimensions(modelSettingsService.getEmbeddingsModel().getDimensions());
 
         return Optional.of(spaceRepository.save(space))
                 .map(s -> new Space(s.getId(), s.getName(), s.getCreatedAt()))

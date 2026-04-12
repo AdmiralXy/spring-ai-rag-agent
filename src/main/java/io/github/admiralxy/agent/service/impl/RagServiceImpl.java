@@ -1,10 +1,10 @@
 package io.github.admiralxy.agent.service.impl;
 
-import io.github.admiralxy.agent.config.properties.RagProperties;
 import io.github.admiralxy.agent.controller.response.documents.ProviderType;
 import io.github.admiralxy.agent.service.AddDocumentCommand;
 import io.github.admiralxy.agent.service.RagService;
 import io.github.admiralxy.agent.service.TokenizerService;
+import io.github.admiralxy.agent.service.model.ModelSettingsService;
 import io.github.admiralxy.agent.service.provider.RagChunk;
 import io.github.admiralxy.agent.service.provider.RagContentProvider;
 import io.github.admiralxy.agent.service.provider.RagContentRequest;
@@ -54,7 +54,7 @@ public class RagServiceImpl implements RagService {
 
     private final VectorStore store;
     private final TokenizerService tokenizerService;
-    private final RagProperties ragProperties;
+    private final ModelSettingsService modelSettingsService;
     private final List<RagContentProvider> contentProviders;
 
     @Override
@@ -76,7 +76,7 @@ public class RagServiceImpl implements RagService {
     private int persistAndMapProgress(Map<String, Object> meta, RagChunk chunk) {
         List<String> tokenSafeParts = tokenizerService.splitToTokenChunks(
                 chunk.text(),
-                ragProperties.getMaxDocumentTokens()
+                modelSettingsService.getEmbeddingsModel().getMaxDocumentTokens()
         );
         tokenSafeParts.forEach(part -> saveWithTokenLimitFallback(meta, chunk, part));
 

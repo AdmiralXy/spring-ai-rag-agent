@@ -11,3 +11,5 @@ databaseChangeLog:
       file: db/changes/release/1.0/add-documents-table.yaml
   - include:
       file: db/changes/release/1.0/add-prompt-templates-table.yaml
+  - include:
+      file: db/changes/release/1.0/add-model-settings-tables.yaml

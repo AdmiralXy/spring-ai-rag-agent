@@ -1,7 +1,6 @@
 package io.github.admiralxy.agent.service.impl;
 
 import io.github.admiralxy.agent.config.properties.ChatProperties;
-import io.github.admiralxy.agent.config.properties.ModelProperties;
 import io.github.admiralxy.agent.config.properties.RagProperties;
 import io.github.admiralxy.agent.domain.Chat;
 import io.github.admiralxy.agent.domain.ChatMessage;
@@ -20,14 +19,11 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
-import org.springframework.core.io.DefaultResourceLoader;
-import org.springframework.core.io.Resource;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
-import org.springframework.util.FileCopyUtils;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.Disposable;
 import reactor.core.publisher.ConnectableFlux;
@@ -35,10 +31,8 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.IllegalFormatException;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -51,9 +45,9 @@ public class ChatServiceImpl implements ChatService {
     private static final String CONVERSATION_NOT_FOUND = "Conversation not found";
     private static final String MODEL_NOT_FOUND = "Model '%s' not found. Switching to fallback model.";
     private static final String CONTEXT_PROMPT = "Use this additional information for answer:\n%s";
+    private static final String CHAT_SUMMARIZER_FALLBACK_PROMPT = "Message: %s";
     private static final String SORT_DIRECTION_COLUMN = "createdAt";
     private static final String CHAT_MEMORY_CONVERSATION_ID_KEY = "chat_memory_conversation_id";
-    private static final String CHAT_TITLE_PROMPT_PATH = "classpath:messages/chat-summarizer.md";
     private static final int MAX_CHAT_TITLE_LENGTH = 120;
 
     private final ConversationRepository conversationRepository;
@@ -62,9 +56,6 @@ public class ChatServiceImpl implements ChatService {
     private final RagProperties ragProperties;
     private final ChatClientsRegistry chatClientsRegistry;
     private final ChatMemory chatMemory;
-    private final DefaultResourceLoader resourceLoader = new DefaultResourceLoader();
-
-    private String titlePromptTemplate;
 
     @Override
     public Page<Chat> getAll(int page, int size) {
@@ -87,6 +78,10 @@ public class ChatServiceImpl implements ChatService {
 
     @Override
     public String updateModelName(UUID chatId, String modelName) {
+        if (!chatClientsRegistry.contains(modelName)) {
+            throw new RuntimeException(MODEL_NOT_FOUND.formatted(modelName));
+        }
+
         var conversation = conversationRepository.findById(chatId)
                 .orElseThrow(() -> new RuntimeException("Conversation not found: " + chatId));
 
@@ -102,7 +97,7 @@ public class ChatServiceImpl implements ChatService {
         }
 
         ChatClient chatClient = chatClientsRegistry.getChatClient(modelAlias);
-        ModelProperties properties = chatClientsRegistry.getProperties(modelAlias);
+        var properties = chatClientsRegistry.getProperties(modelAlias);
         return Mono.fromCallable(() ->
                         conversationRepository.findById(id)
                                 .orElseThrow(() -> new IllegalArgumentException(CONVERSATION_NOT_FOUND))
@@ -114,17 +109,17 @@ public class ChatServiceImpl implements ChatService {
                     String context = ragService.buildContext(
                             conv.getRagSpaces(), text,
                             ragProperties.getPercentage(),
-                            properties.getMaxContextTokens() / 2,
+                            properties.maxContextTokens() / 2,
                             ragProperties.getTopK()
                     );
 
                     ChatClient.ChatClientRequestSpec chatSpec = chatClient.prompt()
-                            .system(getSystemPrompt(properties.getSystemPrompt(), context))
+                            .system(getSystemPrompt(properties.systemPrompt(), context))
                             .user(text)
                             .advisors(a -> a.param(CHAT_MEMORY_CONVERSATION_ID_KEY, id));
 
                     Flux<String> source;
-                    if (properties.isStreaming()) {
+                    if (properties.streaming()) {
                         source = chatSpec.stream().content();
                     } else {
                         source = Flux.just(Objects.requireNonNull(chatSpec.call().content()));
@@ -185,10 +180,12 @@ public class ChatServiceImpl implements ChatService {
             return;
         }
 
-        chatClientsRegistry.getSummarizerAlias().ifPresent(alias -> {
+        chatClientsRegistry.getSummarizerClient().ifPresent(summarizer -> {
             try {
-                ChatClient summarizer = chatClientsRegistry.getChatClient(alias);
-                String prompt = getTitlePromptTemplate().formatted(firstMessage);
+                String prompt = buildSummarizerPrompt(
+                        chatClientsRegistry.getSummarizerSystemPrompt().orElse(null),
+                        firstMessage
+                );
                 String generatedTitle = summarizer.prompt()
                         .user(prompt)
                         .call()
@@ -204,20 +201,15 @@ public class ChatServiceImpl implements ChatService {
         });
     }
 
-    private String getTitlePromptTemplate() {
-        if (StringUtils.isNotBlank(titlePromptTemplate)) {
-            return titlePromptTemplate;
+    private String buildSummarizerPrompt(@Nullable String systemPrompt, String firstMessage) {
+        if (StringUtils.isBlank(systemPrompt)) {
+            return CHAT_SUMMARIZER_FALLBACK_PROMPT.formatted(firstMessage);
         }
 
         try {
-            Resource resource = resourceLoader.getResource(CHAT_TITLE_PROMPT_PATH);
-            try (InputStream in = resource.getInputStream();
-                 InputStreamReader reader = new InputStreamReader(in, StandardCharsets.UTF_8)) {
-                this.titlePromptTemplate = FileCopyUtils.copyToString(reader);
-                return titlePromptTemplate;
-            }
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to load chat title prompt: " + CHAT_TITLE_PROMPT_PATH, e);
+            return systemPrompt.formatted(firstMessage);
+        } catch (IllegalFormatException ignored) {
+            return systemPrompt + StringUtils.LF + StringUtils.LF + CHAT_SUMMARIZER_FALLBACK_PROMPT.formatted(firstMessage);
         }
     }
 

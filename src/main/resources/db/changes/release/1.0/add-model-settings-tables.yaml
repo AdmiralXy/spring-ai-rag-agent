@@ -1,0 +1,240 @@
+databaseChangeLog:
+  - changeSet:
+      id: add-model-settings-tables
+      author: AdmiralXy
+      changes:
+        - createTable:
+            tableName: t_chat_model_settings
+            columns:
+              - column:
+                  name: c_id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: c_provider
+                  type: varchar(32)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_label
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_name
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_base_url
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_api_key
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_streaming
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_system_prompt
+                  type: text
+              - column:
+                  name: c_priority
+                  type: int
+                  defaultValueNumeric: 100
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_temperature
+                  type: double precision
+                  defaultValueNumeric: 1.0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_max_context_tokens
+                  type: int
+                  defaultValueNumeric: 128000
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_created_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_updated_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+
+        - createTable:
+            tableName: t_embeddings_model_settings
+            columns:
+              - column:
+                  name: c_id
+                  type: smallint
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: c_provider
+                  type: varchar(32)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_base_url
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_api_key
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_name
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_dimensions
+                  type: int
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_max_document_tokens
+                  type: int
+                  defaultValueNumeric: 7000
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_created_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_updated_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+
+        - createTable:
+            tableName: t_summarizer_model_settings
+            columns:
+              - column:
+                  name: c_id
+                  type: smallint
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: c_provider
+                  type: varchar(32)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_name
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_base_url
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_api_key
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_system_prompt
+                  type: text
+              - column:
+                  name: c_created_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_updated_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+
+  - changeSet:
+      id: add-spaces-dimensions-column
+      author: AdmiralXy
+      changes:
+        - addColumn:
+            tableName: t_spaces
+            columns:
+              - column:
+                  name: c_dimensions
+                  type: int
+                  defaultValueNumeric: ${embedding-dimensions}
+                  constraints:
+                    nullable: false
+
+  - changeSet:
+      id: seed-singleton-model-settings
+      author: AdmiralXy
+      changes:
+        - insert:
+            tableName: t_embeddings_model_settings
+            columns:
+              - column:
+                  name: c_id
+                  valueNumeric: 1
+              - column:
+                  name: c_provider
+                  value: OPENAI
+              - column:
+                  name: c_base_url
+                  value: https://api.openai.com
+              - column:
+                  name: c_api_key
+                  value: ""
+              - column:
+                  name: c_name
+                  value: text-embedding-3-small
+              - column:
+                  name: c_dimensions
+                  valueNumeric: ${embedding-dimensions}
+              - column:
+                  name: c_created_at
+                  valueComputed: NOW()
+              - column:
+                  name: c_updated_at
+                  valueComputed: NOW()
+        - insert:
+            tableName: t_summarizer_model_settings
+            columns:
+              - column:
+                  name: c_id
+                  valueNumeric: 1
+              - column:
+                  name: c_provider
+                  value: OPENAI
+              - column:
+                  name: c_name
+                  value: deepseek-chat
+              - column:
+                  name: c_base_url
+                  value: https://api.openai.com
+              - column:
+                  name: c_api_key
+                  value: ""
+              - column:
+                  name: c_system_prompt
+                  value: "Generate a short chat title based only on the message below. Rules: - Use the same language as the message. - Keep it concise, 3 to 7 words. - Do not use quotes. - Do not add punctuation at the end. - Return only the title text. Message: %s"
+              - column:
+                  name: c_created_at
+                  valueComputed: NOW()
+              - column:
+                  name: c_updated_at
+                  valueComputed: NOW()
