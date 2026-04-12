@@ -55,7 +55,7 @@ class ConfluenceRagContentProviderTest {
             StepVerifier.create(provider.resolveChunks(request(buildUrl(server), USERNAME, PASSWORD)))
                     .expectNext(new RagChunk("Стенды\n\n<p>Контент</p>", 0, 1))
                     .verifyComplete();
-            assertEquals(expectedBasicAuth(USERNAME, PASSWORD), authorizationRef.get());
+            assertEquals(expectedBasicAuth(), authorizationRef.get());
         } finally {
             server.stop(0);
         }
@@ -133,8 +133,8 @@ class ConfluenceRagContentProviderTest {
         return chunker;
     }
 
-    private String expectedBasicAuth(String username, String password) {
-        String token = Base64.getEncoder().encodeToString((username + ":" + password).getBytes(StandardCharsets.UTF_8));
+    private String expectedBasicAuth() {
+        String token = Base64.getEncoder().encodeToString((USERNAME + ":" + PASSWORD).getBytes(StandardCharsets.UTF_8));
         return "Basic " + token;
     }
 }
