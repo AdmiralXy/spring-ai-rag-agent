@@ -9,6 +9,7 @@ app:
     rag:
       percentage: 30
       top-k: 100
+      max-document-tokens: ${MAX_DOCUMENT_TOKENS:7000}
   configPath: ${CONFIG_PATH:classpath:models}
 
 spring:

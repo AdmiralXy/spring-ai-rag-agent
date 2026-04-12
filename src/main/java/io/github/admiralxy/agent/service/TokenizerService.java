@@ -1,5 +1,7 @@
 package io.github.admiralxy.agent.service;
 
+import java.util.List;
+
 public interface TokenizerService {
 
     /**
@@ -18,4 +20,13 @@ public interface TokenizerService {
      * @return truncated text
      */
     String truncateToTokens(String text, int maxTokens);
+
+    /**
+     * Splits text into chunks where each chunk has at most maxTokens tokens.
+     *
+     * @param text input string
+     * @param maxTokens maximum allowed number of tokens per chunk
+     * @return token-safe chunks
+     */
+    List<String> splitToTokenChunks(String text, int maxTokens);
 }

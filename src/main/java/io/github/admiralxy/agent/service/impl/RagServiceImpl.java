@@ -1,6 +1,7 @@
 package io.github.admiralxy.agent.service.impl;
 
 import io.github.admiralxy.agent.controller.response.documents.ProviderType;
+import io.github.admiralxy.agent.config.properties.RagProperties;
 import io.github.admiralxy.agent.service.AddDocumentCommand;
 import io.github.admiralxy.agent.service.RagService;
 import io.github.admiralxy.agent.service.TokenizerService;
@@ -15,10 +16,12 @@ import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
+import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Queue;
 import java.util.UUID;
 
 @Service
@@ -36,9 +39,11 @@ public class RagServiceImpl implements RagService {
     private static final String SPACE_METADATA_KEY = "space";
     private static final String CHUNK_NUMBER_METADATA_KEY = "number";
     private static final String TOTAL_CHUNKS_METADATA_KEY = "total";
+    private static final String TOKEN_LIMIT_ERROR_FRAGMENT = "maximum number of allowed input tokens";
 
     private final VectorStore store;
     private final TokenizerService tokenizerService;
+    private final RagProperties ragProperties;
     private final List<RagContentProvider> contentProviders;
 
     @Override
@@ -58,18 +63,57 @@ public class RagServiceImpl implements RagService {
     }
 
     private int persistAndMapProgress(Map<String, Object> meta, RagChunk chunk) {
-        String chunkId = UUID.randomUUID().toString();
-        Map<String, Object> metaChunk = new HashMap<>(meta);
-        metaChunk.put(CHUNK_NUMBER_METADATA_KEY, chunk.number());
-        metaChunk.put(TOTAL_CHUNKS_METADATA_KEY, chunk.total());
-        metaChunk.put(CHUNK_ID_METADATA_KEY, chunkId);
-
-        store.add(List.of(new Document(chunkId, chunk.text(), metaChunk)));
+        List<String> tokenSafeParts = tokenizerService.splitToTokenChunks(
+                chunk.text(),
+                ragProperties.getMaxDocumentTokens()
+        );
+        tokenSafeParts.forEach(part -> saveWithTokenLimitFallback(meta, chunk, part));
 
         if (chunk.total() <= 0) {
             return 100;
         }
         return (int) (((chunk.number() + 1) / (double) chunk.total()) * 100);
+    }
+
+    private void saveWithTokenLimitFallback(Map<String, Object> meta, RagChunk chunk, String text) {
+        Queue<String> queue = new ArrayDeque<>();
+        queue.add(text);
+
+        while (!queue.isEmpty()) {
+            String part = queue.poll();
+            try {
+                store.add(List.of(newDocument(meta, chunk, part)));
+            } catch (RuntimeException ex) {
+                if (!isTokenLimitError(ex)) {
+                    throw ex;
+                }
+
+                int tokens = tokenizerService.countTokens(part);
+                if (tokens <= 1) {
+                    throw ex;
+                }
+
+                List<String> split = tokenizerService.splitToTokenChunks(part, Math.max(1, tokens / 2));
+                if (split.size() <= 1) {
+                    throw ex;
+                }
+                queue.addAll(split);
+            }
+        }
+    }
+
+    private Document newDocument(Map<String, Object> meta, RagChunk chunk, String text) {
+        String chunkId = UUID.randomUUID().toString();
+        Map<String, Object> metaChunk = new HashMap<>(meta);
+        metaChunk.put(CHUNK_NUMBER_METADATA_KEY, chunk.number());
+        metaChunk.put(TOTAL_CHUNKS_METADATA_KEY, chunk.total());
+        metaChunk.put(CHUNK_ID_METADATA_KEY, chunkId);
+        return new Document(chunkId, text, metaChunk);
+    }
+
+    private boolean isTokenLimitError(RuntimeException ex) {
+        String message = ex.getMessage();
+        return message != null && message.toLowerCase().contains(TOKEN_LIMIT_ERROR_FRAGMENT);
     }
 
     private RagContentProvider resolveProvider(ProviderType providerType) {

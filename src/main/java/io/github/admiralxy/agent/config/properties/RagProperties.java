@@ -20,4 +20,9 @@ public class RagProperties {
      * RAG top-k documents to include.
      */
     private int topK = 100;
+
+    /**
+     * Maximum allowed tokens in a single stored document chunk.
+     */
+    private int maxDocumentTokens = 8000;
 }

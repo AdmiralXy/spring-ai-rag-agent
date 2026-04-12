@@ -1,6 +1,7 @@
 package io.github.admiralxy.agent.service.impl;
 
 import io.github.admiralxy.agent.controller.response.documents.ProviderType;
+import io.github.admiralxy.agent.config.properties.RagProperties;
 import io.github.admiralxy.agent.service.AddDocumentCommand;
 import io.github.admiralxy.agent.service.TokenizerService;
 import io.github.admiralxy.agent.service.provider.RagChunk;
@@ -19,11 +20,15 @@ import reactor.test.StepVerifier;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -37,6 +42,7 @@ class RagServiceImplTest {
     private VectorStore store;
 
     private TokenizerService tokenizerService;
+    private RagProperties ragProperties;
 
     @Mock
     private RagContentProvider textContentProvider;
@@ -49,9 +55,14 @@ class RagServiceImplTest {
     @BeforeEach
     void setUp() {
         tokenizerService = org.mockito.Mockito.mock(TokenizerService.class);
+        ragProperties = new RagProperties();
+        ragProperties.setMaxDocumentTokens(8000);
+        lenient().when(tokenizerService.splitToTokenChunks(any(), anyInt()))
+                .thenAnswer(invocation -> List.of(invocation.getArgument(0, String.class)));
         ragService = new RagServiceImpl(
                 store,
                 tokenizerService,
+                ragProperties,
                 List.of(textContentProvider, confluenceContentProvider)
         );
     }
@@ -147,6 +158,52 @@ class RagServiceImplTest {
         // THEN
         assertEquals("alpha\n---\n", result);
         verify(tokenizerService, times(2)).countTokens("alpha");
+    }
+
+    @Test
+    void addSplitsChunkWhenTokenLimitExceeded() {
+        // GIVEN
+        when(textContentProvider.supports(ProviderType.TEXT)).thenReturn(true);
+        when(textContentProvider.resolveChunks(any())).thenReturn(Flux.just(new RagChunk("big chunk", 0, 1)));
+        when(tokenizerService.splitToTokenChunks("big chunk", 2)).thenReturn(List.of("part-1", "part-2"));
+        ragProperties.setMaxDocumentTokens(2);
+
+        // WHEN
+        Flux<Integer> result = ragService.add(command(ProviderType.TEXT, "x", false));
+
+        // THEN
+        StepVerifier.create(result)
+                .expectNext(100)
+                .verifyComplete();
+        verify(store, times(2)).add(anyList());
+    }
+
+    @Test
+    void addRetriesWithSmallerChunksWhenStoreReturnsTokenLimitError() {
+        // GIVEN
+        when(textContentProvider.supports(ProviderType.TEXT)).thenReturn(true);
+        when(textContentProvider.resolveChunks(any())).thenReturn(Flux.just(new RagChunk("too-big", 0, 1)));
+        when(tokenizerService.countTokens("too-big")).thenReturn(10);
+        when(tokenizerService.splitToTokenChunks("too-big", 8000)).thenReturn(List.of("too-big"));
+        when(tokenizerService.splitToTokenChunks("too-big", 5)).thenReturn(List.of("small-1", "small-2"));
+
+        AtomicInteger call = new AtomicInteger();
+        doAnswer(invocation -> {
+            int current = call.incrementAndGet();
+            if (current == 1) {
+                throw new RuntimeException("Tokens in a single document exceeds the maximum number of allowed input tokens");
+            }
+            return null;
+        }).when(store).add(anyList());
+
+        // WHEN
+        Flux<Integer> result = ragService.add(command(ProviderType.TEXT, "x", false));
+
+        // THEN
+        StepVerifier.create(result)
+                .expectNext(100)
+                .verifyComplete();
+        verify(store, times(3)).add(anyList());
     }
 
     private AddDocumentCommand command(ProviderType providerType, String text, boolean batch) {
