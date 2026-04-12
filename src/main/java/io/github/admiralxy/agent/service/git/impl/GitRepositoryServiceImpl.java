@@ -90,7 +90,7 @@ public class GitRepositoryServiceImpl implements GitRepositoryService {
                     .map(name -> name.substring(HEADS_PREFIX.length()))
                     .sorted()
                     .toList();
-        } catch (GitAPIException e) {
+        } catch (Exception e) {
             throw new IllegalStateException("Failed to fetch branches from git repository", e);
         }
     }
@@ -135,9 +135,6 @@ public class GitRepositoryServiceImpl implements GitRepositoryService {
     private void validateFolder(String folder) {
         if (StringUtils.isBlank(folder)) {
             return;
-        }
-        if (".git".equals(folder)) {
-            throw new IllegalArgumentException("Folder .git is not allowed");
         }
         if (folder.contains("/") || folder.contains("\\")) {
             throw new IllegalArgumentException("Only top-level folder is allowed");

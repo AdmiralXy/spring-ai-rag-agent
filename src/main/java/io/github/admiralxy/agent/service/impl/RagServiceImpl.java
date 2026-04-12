@@ -1,7 +1,7 @@
 package io.github.admiralxy.agent.service.impl;
 
-import io.github.admiralxy.agent.controller.response.documents.ProviderType;
 import io.github.admiralxy.agent.config.properties.RagProperties;
+import io.github.admiralxy.agent.controller.response.documents.ProviderType;
 import io.github.admiralxy.agent.service.AddDocumentCommand;
 import io.github.admiralxy.agent.service.RagService;
 import io.github.admiralxy.agent.service.TokenizerService;
