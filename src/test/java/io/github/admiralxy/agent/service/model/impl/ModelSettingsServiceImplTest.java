@@ -74,6 +74,27 @@ class ModelSettingsServiceImplTest {
     }
 
     @Test
+    void updateEmbeddingsModel_shouldSkipIvfflatIndex_whenDimensionsGreaterThan2000() {
+        EmbeddingsModelSettingsEntity existing = embeddings(1536);
+        EmbeddingsModelSettingsEntity update = embeddings(3072);
+
+        when(embeddingsRepository.findById((short) 1)).thenReturn(Optional.of(existing));
+        when(embeddingsRepository.save(existing)).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.updateEmbeddingsModel(update);
+
+        verify(jdbcTemplate).update("DELETE FROM documents");
+        verify(jdbcTemplate).update("UPDATE t_spaces SET c_dimensions = ?", 3072);
+        verify(jdbcTemplate).execute("DROP INDEX IF EXISTS documents_embedding_idx");
+        verify(jdbcTemplate).execute("ALTER TABLE documents ALTER COLUMN embedding TYPE vector(3072)");
+        verify(jdbcTemplate, never()).execute(
+                "CREATE INDEX IF NOT EXISTS documents_embedding_idx ON documents "
+                        + "USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)"
+        );
+        verify(embeddingModelRuntime).invalidate();
+    }
+
+    @Test
     void updateEmbeddingsModel_shouldSkipRebuild_whenDimensionsNotChanged() {
         EmbeddingsModelSettingsEntity existing = embeddings(1536);
         EmbeddingsModelSettingsEntity update = embeddings(1536);

@@ -9,6 +9,7 @@ import io.github.admiralxy.agent.repository.SummarizerModelSettingsRepository;
 import io.github.admiralxy.agent.service.model.EmbeddingModelRuntime;
 import io.github.admiralxy.agent.service.model.ModelSettingsService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,6 +19,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ModelSettingsServiceImpl implements ModelSettingsService {
 
     private static final short EMBEDDINGS_SINGLETON_ID = 1;
@@ -35,6 +37,7 @@ public class ModelSettingsServiceImpl implements ModelSettingsService {
     private static final String SQL_RECREATE_DOCUMENTS_VECTOR_INDEX =
             "CREATE INDEX IF NOT EXISTS documents_embedding_idx ON documents "
                     + "USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)";
+    private static final int IVFFLAT_MAX_DIMENSIONS = 2000;
 
     private final ChatModelSettingsRepository chatModelRepository;
     private final EmbeddingsModelSettingsRepository embeddingsRepository;
@@ -133,6 +136,16 @@ public class ModelSettingsServiceImpl implements ModelSettingsService {
         jdbcTemplate.update(SQL_UPDATE_SPACES_DIMENSIONS, dimensions);
         jdbcTemplate.execute(SQL_DROP_DOCUMENTS_VECTOR_INDEX);
         jdbcTemplate.execute(SQL_ALTER_DOCUMENTS_VECTOR_DIMENSIONS_TEMPLATE.formatted(dimensions));
-        jdbcTemplate.execute(SQL_RECREATE_DOCUMENTS_VECTOR_INDEX);
+        if (dimensions <= IVFFLAT_MAX_DIMENSIONS) {
+            jdbcTemplate.execute(SQL_RECREATE_DOCUMENTS_VECTOR_INDEX);
+            return;
+        }
+
+        log.warn(
+                "Skip ivfflat index recreation for documents.embedding because dimensions={} exceeds limit={}. "
+                        + "Similarity search will work without ANN index until dimensions is reduced.",
+                dimensions,
+                IVFFLAT_MAX_DIMENSIONS
+        );
     }
 }
