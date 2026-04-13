@@ -3,6 +3,7 @@ package io.github.admiralxy.agent.service.provider.impl;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.admiralxy.agent.config.AiHttpClientBuilderFactory;
 import io.github.admiralxy.agent.controller.response.documents.ProviderType;
 import io.github.admiralxy.agent.service.TextChunkerService;
 import io.github.admiralxy.agent.service.provider.AbstractChunkingRagContentProvider;
@@ -24,10 +25,12 @@ public class ConfluenceRagContentProvider extends AbstractChunkingRagContentProv
     private static final String VALUE_FIELD = "value";
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final WebClient webClient = WebClient.builder().build();
+    private final WebClient webClient;
 
-    public ConfluenceRagContentProvider(TextChunkerService textChunkerService) {
+    public ConfluenceRagContentProvider(TextChunkerService textChunkerService,
+                                        AiHttpClientBuilderFactory httpClientBuilderFactory) {
         super(textChunkerService);
+        this.webClient = httpClientBuilderFactory.createWebClientBuilder().build();
     }
 
     @Override

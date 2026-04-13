@@ -26,8 +26,12 @@ public class AiHttpClientBuilderFactory {
 
     private final boolean insecureSsl;
 
-    public AiHttpClientBuilderFactory(@Value("${app.ai.insecure-ssl:false}") boolean insecureSsl) {
+    public AiHttpClientBuilderFactory(@Value("${app.outbound.insecure-ssl:false}") boolean insecureSsl) {
         this.insecureSsl = insecureSsl;
+    }
+
+    public boolean isInsecureSslEnabled() {
+        return insecureSsl;
     }
 
     public RestClient.Builder createRestClientBuilder() {

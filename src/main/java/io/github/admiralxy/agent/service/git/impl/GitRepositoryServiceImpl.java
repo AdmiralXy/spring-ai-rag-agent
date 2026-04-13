@@ -1,29 +1,47 @@
 package io.github.admiralxy.agent.service.git.impl;
 
+import io.github.admiralxy.agent.config.AiHttpClientBuilderFactory;
 import io.github.admiralxy.agent.service.git.GitRepositoryInfo;
 import io.github.admiralxy.agent.service.git.GitRepositoryService;
+import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.eclipse.jgit.api.CloneCommand;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.LsRemoteCommand;
+import org.eclipse.jgit.api.TransportCommand;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.transport.CredentialsProvider;
+import org.eclipse.jgit.transport.Transport;
+import org.eclipse.jgit.transport.TransportHttp;
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
+import org.eclipse.jgit.transport.http.HttpConnection;
+import org.eclipse.jgit.transport.http.HttpConnectionFactory;
+import org.eclipse.jgit.transport.http.JDKHttpConnectionFactory;
+import org.eclipse.jgit.transport.http.NoCheckX509TrustManager;
 import org.springframework.stereotype.Service;
 
+import javax.net.ssl.TrustManager;
 import java.io.IOException;
+import java.net.Proxy;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.KeyManagementException;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Stream;
 
 @Service
+@RequiredArgsConstructor
 public class GitRepositoryServiceImpl implements GitRepositoryService {
 
     private static final String HEADS_PREFIX = "refs/heads/";
+    private static final HttpConnectionFactory INSECURE_HTTP_CONNECTION_FACTORY = new InsecureHttpConnectionFactory();
+    private final AiHttpClientBuilderFactory httpClientBuilderFactory;
 
     @Override
     public GitRepositoryInfo getRepositoryInfo(String repositoryUrl, String login, String password) {
@@ -81,6 +99,7 @@ public class GitRepositoryServiceImpl implements GitRepositoryService {
             LsRemoteCommand command = Git.lsRemoteRepository()
                     .setHeads(true)
                     .setRemote(repositoryUrl);
+            applyTransportConfig(command);
             if (credentialsProvider != null) {
                 command.setCredentialsProvider(credentialsProvider);
             }
@@ -103,6 +122,7 @@ public class GitRepositoryServiceImpl implements GitRepositoryService {
                     .setDirectory(tempDir.toFile())
                     .setCloneAllBranches(false)
                     .setDepth(1);
+            applyTransportConfig(command);
             if (StringUtils.isNotBlank(branch)) {
                 command.setBranch(branch);
             }
@@ -204,5 +224,47 @@ public class GitRepositoryServiceImpl implements GitRepositoryService {
             return null;
         }
         return new UsernamePasswordCredentialsProvider(login, StringUtils.defaultString(password));
+    }
+
+    private void applyTransportConfig(TransportCommand<?, ?> command) {
+        if (!httpClientBuilderFactory.isInsecureSslEnabled()) {
+            return;
+        }
+        command.setTransportConfigCallback(this::configureTransport);
+    }
+
+    private void configureTransport(Transport transport) {
+        if (transport instanceof TransportHttp transportHttp) {
+            transportHttp.setHttpConnectionFactory(INSECURE_HTTP_CONNECTION_FACTORY);
+        }
+    }
+
+    private static final class InsecureHttpConnectionFactory implements HttpConnectionFactory {
+
+        private static final TrustManager[] TRUST_ALL_MANAGERS = new TrustManager[]{new NoCheckX509TrustManager()};
+        private final JDKHttpConnectionFactory delegate = new JDKHttpConnectionFactory();
+
+        @Override
+        public HttpConnection create(URL url) throws IOException {
+            HttpConnection connection = delegate.create(url);
+            configure(connection);
+            return connection;
+        }
+
+        @Override
+        public HttpConnection create(URL url, Proxy proxy) throws IOException {
+            HttpConnection connection = delegate.create(url, proxy);
+            configure(connection);
+            return connection;
+        }
+
+        private void configure(HttpConnection connection) {
+            try {
+                connection.configure(null, TRUST_ALL_MANAGERS, new SecureRandom());
+                connection.setHostnameVerifier((ignoredHost, ignoredSession) -> true);
+            } catch (NoSuchAlgorithmException | KeyManagementException ex) {
+                throw new IllegalStateException("Failed to configure insecure SSL for JGit HTTP transport", ex);
+            }
+        }
     }
 }

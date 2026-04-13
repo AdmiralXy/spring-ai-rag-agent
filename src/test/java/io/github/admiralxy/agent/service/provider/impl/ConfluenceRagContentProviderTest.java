@@ -2,6 +2,7 @@ package io.github.admiralxy.agent.service.provider.impl;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import io.github.admiralxy.agent.config.AiHttpClientBuilderFactory;
 import io.github.admiralxy.agent.controller.response.documents.ProviderType;
 import io.github.admiralxy.agent.service.TextChunkerService;
 import io.github.admiralxy.agent.service.provider.RagChunk;
@@ -30,14 +31,14 @@ class ConfluenceRagContentProviderTest {
 
     @Test
     void supportsConfluenceOnly() {
-        ConfluenceRagContentProvider provider = new ConfluenceRagContentProvider(noOpChunker());
+        ConfluenceRagContentProvider provider = new ConfluenceRagContentProvider(noOpChunker(), clientFactory());
         assertTrue(provider.supports(ProviderType.CONFLUENCE));
         assertFalse(provider.supports(ProviderType.TEXT));
     }
 
     @Test
     void resolveContentReturnsTitleAndStorageValue() throws IOException {
-        ConfluenceRagContentProvider provider = new ConfluenceRagContentProvider(noOpChunker());
+        ConfluenceRagContentProvider provider = new ConfluenceRagContentProvider(noOpChunker(), clientFactory());
         AtomicReference<String> authorizationRef = new AtomicReference<>();
         HttpServer server = createServer(200, """
                 {
@@ -63,7 +64,7 @@ class ConfluenceRagContentProviderTest {
 
     @Test
     void resolveContentThrowsOnNonSuccessfulStatus() throws IOException {
-        ConfluenceRagContentProvider provider = new ConfluenceRagContentProvider(noOpChunker());
+        ConfluenceRagContentProvider provider = new ConfluenceRagContentProvider(noOpChunker(), clientFactory());
         HttpServer server = createServer(500, "{}", null);
         server.start();
 
@@ -78,7 +79,7 @@ class ConfluenceRagContentProviderTest {
 
     @Test
     void resolveContentThrowsOnInvalidJson() throws IOException {
-        ConfluenceRagContentProvider provider = new ConfluenceRagContentProvider(noOpChunker());
+        ConfluenceRagContentProvider provider = new ConfluenceRagContentProvider(noOpChunker(), clientFactory());
         HttpServer server = createServer(200, "not-json", null);
         server.start();
 
@@ -93,7 +94,7 @@ class ConfluenceRagContentProviderTest {
 
     @Test
     void resolveContentThrowsWhenCredentialsAreMissing() {
-        ConfluenceRagContentProvider provider = new ConfluenceRagContentProvider(noOpChunker());
+        ConfluenceRagContentProvider provider = new ConfluenceRagContentProvider(noOpChunker(), clientFactory());
 
         StepVerifier.create(provider.resolveChunks(request("http://localhost:8080", "", "")))
                 .expectError(IllegalStateException.class)
@@ -136,5 +137,9 @@ class ConfluenceRagContentProviderTest {
     private String expectedBasicAuth() {
         String token = Base64.getEncoder().encodeToString((USERNAME + ":" + PASSWORD).getBytes(StandardCharsets.UTF_8));
         return "Basic " + token;
+    }
+
+    private AiHttpClientBuilderFactory clientFactory() {
+        return new AiHttpClientBuilderFactory(false);
     }
 }

@@ -4,8 +4,8 @@ server:
     context-path: /api/agent
 
 app:
-  ai:
-    insecure-ssl: ${AI_INSECURE_SSL:false}
+  outbound:
+    insecure-ssl: ${OUTBOUND_INSECURE_SSL:${AI_INSECURE_SSL:false}}
   chat:
     history-limit: 20
     rag:
