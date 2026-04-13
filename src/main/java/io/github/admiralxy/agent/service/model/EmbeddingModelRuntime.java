@@ -1,5 +1,6 @@
 package io.github.admiralxy.agent.service.model;
 
+import io.github.admiralxy.agent.config.AiHttpClientBuilderFactory;
 import io.github.admiralxy.agent.entity.EmbeddingsModelSettingsEntity;
 import io.github.admiralxy.agent.repository.EmbeddingsModelSettingsRepository;
 import lombok.RequiredArgsConstructor;
@@ -17,6 +18,7 @@ public class EmbeddingModelRuntime {
     private static final short SINGLETON_ID = 1;
 
     private final EmbeddingsModelSettingsRepository repository;
+    private final AiHttpClientBuilderFactory httpClientBuilderFactory;
 
     private volatile String signature;
     private volatile EmbeddingModel embeddingModel;
@@ -39,6 +41,8 @@ public class EmbeddingModelRuntime {
             OpenAiApi api = OpenAiApi.builder()
                     .baseUrl(settings.getBaseUrl())
                     .apiKey(settings.getApiKey())
+                    .restClientBuilder(httpClientBuilderFactory.createRestClientBuilder())
+                    .webClientBuilder(httpClientBuilderFactory.createWebClientBuilder())
                     .build();
 
             OpenAiEmbeddingOptions options = OpenAiEmbeddingOptions.builder()

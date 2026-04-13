@@ -1,5 +1,6 @@
 package io.github.admiralxy.agent.service.model;
 
+import io.github.admiralxy.agent.config.AiHttpClientBuilderFactory;
 import io.github.admiralxy.agent.entity.ChatModelProvider;
 import org.springframework.ai.anthropic.AnthropicChatModel;
 import org.springframework.ai.anthropic.AnthropicChatOptions;
@@ -17,6 +18,11 @@ import org.springframework.stereotype.Component;
 public class ChatModelClientFactory {
 
     private static final int DEFAULT_ANTHROPIC_MAX_TOKENS = 32000;
+    private final AiHttpClientBuilderFactory httpClientBuilderFactory;
+
+    public ChatModelClientFactory(AiHttpClientBuilderFactory httpClientBuilderFactory) {
+        this.httpClientBuilderFactory = httpClientBuilderFactory;
+    }
 
     public ChatClient createWithMemory(ChatModelProvider provider,
                                        String model,
@@ -58,6 +64,8 @@ public class ChatModelClientFactory {
         OpenAiApi api = OpenAiApi.builder()
                 .baseUrl(baseUrl)
                 .apiKey(apiKey)
+                .restClientBuilder(httpClientBuilderFactory.createRestClientBuilder())
+                .webClientBuilder(httpClientBuilderFactory.createWebClientBuilder())
                 .build();
 
         OpenAiChatOptions options = OpenAiChatOptions.builder()
@@ -76,7 +84,10 @@ public class ChatModelClientFactory {
                                            String baseUrl,
                                            String apiKey,
                                            double temperature) {
-        AnthropicApi.Builder apiBuilder = AnthropicApi.builder().apiKey(apiKey);
+        AnthropicApi.Builder apiBuilder = AnthropicApi.builder()
+                .apiKey(apiKey)
+                .restClientBuilder(httpClientBuilderFactory.createRestClientBuilder())
+                .webClientBuilder(httpClientBuilderFactory.createWebClientBuilder());
         if (baseUrl != null && !baseUrl.isBlank()) {
             apiBuilder.baseUrl(baseUrl);
         }
