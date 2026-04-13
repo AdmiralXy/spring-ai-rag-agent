@@ -193,9 +193,9 @@ public class TextChunkerServiceImpl implements TextChunkerService {
             }
             if (!current.isEmpty()) {
                 current.append('\n');
-                linesCount++;
             }
             current.append(l);
+            linesCount++;
         }
         if (!current.isEmpty()) {
             chunks.add(current.toString().trim());
@@ -210,6 +210,11 @@ public class TextChunkerServiceImpl implements TextChunkerService {
         String c = chunk.trim();
         if (c.length() > maxChars || countLines(c) > maxLines) {
             for (String part : splitByLinesWithLimit(c, maxLines, maxChars)) {
+                // Avoid infinite recursion when split result cannot reduce the chunk.
+                if (c.equals(part)) {
+                    chunks.add(trimToLimits(c, maxChars, maxLines));
+                    return;
+                }
                 addChunkWithLineOverlap(chunks, part, overlapLines, maxChars, maxLines);
             }
             return;
@@ -235,9 +240,24 @@ public class TextChunkerServiceImpl implements TextChunkerService {
                 }
                 merged = prefix.isEmpty() ? c : (prefix + "\n" + c);
             }
-            c = merged.length() > maxChars ? c.substring(0, Math.min(c.length(), maxChars)) : merged;
+            c = merged;
         }
         chunks.add(c.trim());
+    }
+
+    private static String trimToLimits(String chunk, int maxChars, int maxLines) {
+        String text = chunk;
+        if (text.length() > maxChars) {
+            text = text.substring(0, maxChars);
+        }
+        while (countLines(text) > maxLines) {
+            int idx = text.lastIndexOf('\n');
+            if (idx < 0) {
+                break;
+            }
+            text = text.substring(0, idx);
+        }
+        return text.trim();
     }
 
     private static void addChunkWithWordOverlap(List<String> chunks, String chunk, int overlapWords, int maxChars) {
@@ -272,7 +292,7 @@ public class TextChunkerServiceImpl implements TextChunkerService {
                 }
                 merged = prefix.isEmpty() ? c : (prefix + " " + c);
             }
-            c = merged.length() > maxChars ? c : merged;
+            c = merged;
         }
         chunks.add(c.trim());
     }
