@@ -51,6 +51,7 @@ dependencies {
 
     // Git
     implementation("org.eclipse.jgit:org.eclipse.jgit:7.3.0.202506031305-r")
+    implementation("org.jsoup:jsoup:1.18.3")
 
     // Lombok
     compileOnly("org.projectlombok:lombok:1.18.42")

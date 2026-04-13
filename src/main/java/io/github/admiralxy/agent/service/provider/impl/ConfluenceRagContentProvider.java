@@ -32,6 +32,7 @@ public class ConfluenceRagContentProvider extends AbstractChunkingRagContentProv
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final WebClient webClient;
+    private final ConfluenceStorageHtmlFormatter htmlFormatter = new ConfluenceStorageHtmlFormatter();
 
     public ConfluenceRagContentProvider(TextChunkerService textChunkerService,
                                         AiHttpClientBuilderFactory httpClientBuilderFactory) {
@@ -126,13 +127,14 @@ public class ConfluenceRagContentProvider extends AbstractChunkingRagContentProv
                 .path(STORAGE_FIELD)
                 .path(VALUE_FIELD)
                 .asText(StringUtils.EMPTY);
+        String structuredValue = htmlFormatter.format(value);
 
         if (StringUtils.isBlank(title)) {
-            return Mono.just(value);
+            return Mono.just(structuredValue);
         }
-        if (StringUtils.isBlank(value)) {
+        if (StringUtils.isBlank(structuredValue)) {
             return Mono.just(title);
         }
-        return Mono.just(title + "\n\n" + value);
+        return Mono.just(title + "\n\n" + structuredValue);
     }
 }

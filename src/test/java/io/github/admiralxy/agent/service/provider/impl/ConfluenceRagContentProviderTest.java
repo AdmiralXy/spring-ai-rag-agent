@@ -56,7 +56,7 @@ class ConfluenceRagContentProviderTest {
 
         try {
             StepVerifier.create(provider.resolveChunks(request(buildUrl(server), USERNAME, PASSWORD)))
-                    .expectNext(new RagChunk("Стенды\n\n<p>Контент</p>", 0, 1))
+                    .expectNext(new RagChunk("Стенды\n\nКонтент", 0, 1))
                     .verifyComplete();
             assertEquals(expectedBasicAuth(), authorizationRef.get());
         } finally {
