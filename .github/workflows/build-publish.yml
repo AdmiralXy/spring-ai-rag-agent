@@ -29,7 +29,7 @@ jobs:
           --health-retries=5
 
     env:
-      IMAGE_NAME: ${{ vars.DOCKER_REGISTRY }}/${{ vars.ORGANIZATION }}/${{ vars.DOCKER_IMAGE_NAME }}:${{ github.run_id }}
+      IMAGE_NAME: ${{ vars.DOCKER_REGISTRY }}/${{ vars.ORGANIZATION }}/${{ vars.DOCKER_IMAGE_NAME }}:latest
 
     steps:
       - name: Checkout project sources
