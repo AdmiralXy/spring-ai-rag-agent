@@ -24,8 +24,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ConfluenceRagContentProviderTest {
 
-    private static final String PATH = "/rest/api/content/563256891";
-    private static final String QUERY = "expand=body.storage";
+    private static final String PAGE_ID = "563256891";
+    private static final String REQUEST_PATH = "/pages/viewpage.action";
+    private static final String REQUEST_QUERY = "pageId=" + PAGE_ID;
+    private static final String API_PATH = "/rest/api/content/" + PAGE_ID;
     private static final String USERNAME = "user";
     private static final String PASSWORD = "pass";
 
@@ -96,19 +98,19 @@ class ConfluenceRagContentProviderTest {
     void resolveContentThrowsWhenCredentialsAreMissing() {
         ConfluenceRagContentProvider provider = new ConfluenceRagContentProvider(noOpChunker(), clientFactory());
 
-        StepVerifier.create(provider.resolveChunks(request("http://localhost:8080", "", "")))
+        StepVerifier.create(provider.resolveChunks(request("http://localhost:8080/pages/viewpage.action?pageId=1", "", "")))
                 .expectError(IllegalStateException.class)
                 .verify();
     }
 
     private HttpServer createServer(int status, String responseBody, AtomicReference<String> authorizationRef) throws IOException {
         HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
-        server.createContext(PATH, exchange -> writeResponse(exchange, status, responseBody, authorizationRef));
+        server.createContext(API_PATH, exchange -> writeResponse(exchange, status, responseBody, authorizationRef));
         return server;
     }
 
     private String buildUrl(HttpServer server) {
-        return "http://localhost:" + server.getAddress().getPort() + PATH + "?" + QUERY;
+        return "http://localhost:" + server.getAddress().getPort() + REQUEST_PATH + "?" + REQUEST_QUERY;
     }
 
     private void writeResponse(HttpExchange exchange, int status, String responseBody,

@@ -14,6 +14,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
+import java.net.URI;
+import java.net.URISyntaxException;
+
 @Component
 public class ConfluenceRagContentProvider extends AbstractChunkingRagContentProvider {
 
@@ -23,6 +26,9 @@ public class ConfluenceRagContentProvider extends AbstractChunkingRagContentProv
     private static final String BODY_FIELD = "body";
     private static final String STORAGE_FIELD = "storage";
     private static final String VALUE_FIELD = "value";
+    private static final String VIEW_PAGE_PATH = "/pages/viewpage.action";
+    private static final String CONTENT_API_PATH_TEMPLATE = "/rest/api/content/%s";
+    private static final String CONTENT_API_QUERY = "expand=body.storage";
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final WebClient webClient;
@@ -40,6 +46,7 @@ public class ConfluenceRagContentProvider extends AbstractChunkingRagContentProv
 
     @Override
     protected Mono<String> resolveContent(RagContentRequest request) {
+        String url = toConfluenceApiUrl(request.text());
         String username = request.auth() == null ? null : request.auth().login();
         String password = request.auth() == null ? null : request.auth().password();
         if (StringUtils.isBlank(username) || StringUtils.isBlank(password)) {
@@ -47,7 +54,7 @@ public class ConfluenceRagContentProvider extends AbstractChunkingRagContentProv
         }
 
         return webClient.get()
-                .uri(request.text())
+                .uri(url)
                 .accept(MediaType.APPLICATION_JSON)
                 .header(REQUEST_HEADER_ACCEPT, REQUEST_HEADER_ACCEPT_VALUE)
                 .headers(headers -> headers.setBasicAuth(username, password))
@@ -59,6 +66,51 @@ public class ConfluenceRagContentProvider extends AbstractChunkingRagContentProv
                                         "Confluence request failed with status: " + response.statusCode().value())))
                 .bodyToMono(String.class)
                 .flatMap(this::parseContent);
+    }
+
+    private String toConfluenceApiUrl(String rawUrl) {
+        URI uri;
+        try {
+            uri = new URI(rawUrl);
+        } catch (URISyntaxException e) {
+            throw new IllegalStateException("Invalid Confluence URL", e);
+        }
+
+        String pageId = extractQueryParam(uri.getRawQuery(), "pageId");
+        if (StringUtils.isBlank(pageId)) {
+            throw new IllegalStateException("Confluence pageId is required in URL query");
+        }
+
+        if (!VIEW_PAGE_PATH.equals(uri.getPath())) {
+            throw new IllegalStateException("Confluence URL path must be /pages/viewpage.action");
+        }
+
+        try {
+            return new URI(
+                    uri.getScheme(),
+                    uri.getUserInfo(),
+                    uri.getHost(),
+                    uri.getPort(),
+                    CONTENT_API_PATH_TEMPLATE.formatted(pageId),
+                    CONTENT_API_QUERY,
+                    null
+            ).toString();
+        } catch (URISyntaxException e) {
+            throw new IllegalStateException("Failed to build Confluence REST API URL", e);
+        }
+    }
+
+    private String extractQueryParam(String query, String name) {
+        if (StringUtils.isBlank(query)) {
+            return null;
+        }
+        String prefix = name + "=";
+        for (String part : query.split("&")) {
+            if (part.startsWith(prefix) && part.length() > prefix.length()) {
+                return part.substring(prefix.length());
+            }
+        }
+        return null;
     }
 
     private Mono<String> parseContent(String body) {
