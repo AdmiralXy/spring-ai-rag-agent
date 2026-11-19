@@ -11,6 +11,8 @@ app:
     rag:
       percentage: 30
       top-k: 100
+  files:
+    max-size: ${FILES_MAX_SIZE:10MB}
   security:
     model-settings:
       username: ${MODEL_SETTINGS_AUTH_USERNAME:admin}

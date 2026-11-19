@@ -1,0 +1,3 @@
+databaseChangeLog:
+  - include:
+      file: db/changes/release/1.1/add-files-table.yaml
