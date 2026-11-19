@@ -8,6 +8,8 @@ import io.github.admiralxy.agent.domain.StoredFileContent;
 import io.github.admiralxy.agent.service.FileStorageService;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.Resource;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpHeaders;
@@ -47,17 +49,16 @@ class FileControllerTest {
     }
 
     @Test
-    void downloadReturnsBinaryWithAttachmentHeader() {
+    void downloadReturnsBinaryWithAttachmentHeader() throws Exception {
         UUID id = UUID.randomUUID();
         byte[] bytes = "hello".getBytes(StandardCharsets.UTF_8);
         StoredFile file = new StoredFile(id, "отчёт", "pdf", "application/pdf", bytes.length, Instant.now());
-        Mockito.when(fileStorageService.download(id)).thenReturn(new StoredFileContent(file, bytes));
+        Mockito.when(fileStorageService.download(id)).thenReturn(new StoredFileContent(file, new ByteArrayResource(bytes)));
 
-        ResponseEntity<byte[]> rs = fileController.download(id);
+        ResponseEntity<Resource> rs = fileController.download(id);
 
-        assertArrayEquals(bytes, rs.getBody());
+        assertArrayEquals(bytes, rs.getBody().getContentAsByteArray());
         assertEquals(MediaType.APPLICATION_PDF, rs.getHeaders().getContentType());
-        assertEquals(bytes.length, rs.getHeaders().getContentLength());
         String disposition = rs.getHeaders().getFirst(HttpHeaders.CONTENT_DISPOSITION);
         assertTrue(disposition.startsWith("attachment;"));
         assertTrue(disposition.contains("filename*=UTF-8''"));

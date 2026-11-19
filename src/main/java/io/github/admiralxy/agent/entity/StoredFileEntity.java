@@ -14,6 +14,10 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
+/**
+ * Stored file. The body is kept either inline in {@code content} (small files from POST /files)
+ * or on disk under {@code storagePath} (archives); exactly one of them is set.
+ */
 @Entity
 @Table(name = "t_files")
 @Getter
@@ -37,8 +41,11 @@ public class StoredFileEntity {
     @Column(name = "c_size", nullable = false)
     private long size;
 
-    @Column(name = "c_content", nullable = false, columnDefinition = "bytea")
+    @Column(name = "c_content", columnDefinition = "bytea")
     private byte[] content;
+
+    @Column(name = "c_storage_path")
+    private String storagePath;
 
     @Column(name = "c_created_at", nullable = false, updatable = false)
     private Instant createdAt;

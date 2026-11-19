@@ -7,6 +7,7 @@ import io.github.admiralxy.agent.domain.StoredFile;
 import io.github.admiralxy.agent.domain.StoredFileContent;
 import io.github.admiralxy.agent.service.FileStorageService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.io.Resource;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -44,16 +45,16 @@ public class FileController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<byte[]> download(@PathVariable UUID id) {
+    public ResponseEntity<Resource> download(@PathVariable UUID id) {
         StoredFileContent stored = fileStorageService.download(id);
         StoredFile file = stored.file();
         ContentDisposition disposition = ContentDisposition.attachment()
                 .filename(file.fileName(), StandardCharsets.UTF_8)
                 .build();
 
+        // The body is streamed; Content-Length is set by the resource converter.
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(file.contentType()))
-                .contentLength(stored.content().length)
                 .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
                 .body(stored.content());
     }

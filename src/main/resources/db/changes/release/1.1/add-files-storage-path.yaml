@@ -1,0 +1,20 @@
+databaseChangeLog:
+  - changeSet:
+      id: add-files-storage-path
+      author: AdmiralXy
+      comment: File bodies can be stored either inline (bytea) or on disk (relative storage path)
+      changes:
+        - dropNotNullConstraint:
+            tableName: t_files
+            columnName: c_content
+            columnDataType: bytea
+        - addColumn:
+            tableName: t_files
+            columns:
+              - column:
+                  name: c_storage_path
+                  type: text
+        - sql:
+            sql: >
+              ALTER TABLE t_files ADD CONSTRAINT ck_files_content_location
+              CHECK ((c_content IS NULL) <> (c_storage_path IS NULL))

@@ -4,6 +4,7 @@ import io.github.admiralxy.agent.domain.StoredFile;
 import io.github.admiralxy.agent.domain.StoredFileContent;
 import org.springframework.data.domain.Page;
 
+import java.nio.file.Path;
 import java.util.UUID;
 
 public interface FileStorageService {
@@ -17,6 +18,13 @@ public interface FileStorageService {
      * @return stored file metadata
      */
     StoredFile upload(String name, String extension, String base64Content);
+
+    /**
+     * Moves a ready ZIP archive into disk storage and registers it as a file ({@code <name>.zip}).
+     * Not subject to the POST /files size limit. If the surrounding transaction rolls back,
+     * the moved archive is deleted.
+     */
+    StoredFile storeArchive(String name, Path archive);
 
     /**
      * Returns file metadata sorted from newest to oldest.

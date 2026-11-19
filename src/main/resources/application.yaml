@@ -12,7 +12,20 @@ app:
       percentage: 30
       top-k: 100
   files:
-    max-size: ${FILES_MAX_SIZE:10MB}
+    # Max decoded size for POST /files (stored inline in Postgres).
+    max-size: ${FILES_MAX_SIZE:1000MB}
+    # Directory for file bodies stored on disk (ZIP archives from chunked uploads). Must be persistent.
+    storage-dir: ${FILES_STORAGE_DIR:storage/files}
+    uploads:
+      chunk-size: ${FILES_UPLOADS_CHUNK_SIZE:5MB}
+      max-total-size: ${FILES_UPLOADS_MAX_TOTAL_SIZE:500MB}
+      max-files: ${FILES_UPLOADS_MAX_FILES:10000}
+      # Max JSON body for /files/uploads/** requests; must fit a base64-encoded chunk (~1.4 x chunk-size).
+      max-request-size: ${FILES_UPLOADS_MAX_REQUEST_SIZE:7MB}
+      # Session expires after this period without chunk uploads.
+      ttl: ${FILES_UPLOADS_TTL:PT24H}
+      temp-dir: ${FILES_UPLOADS_TEMP_DIR:storage/uploads}
+      cleanup-interval: ${FILES_UPLOADS_CLEANUP_INTERVAL:PT15M}
   security:
     model-settings:
       username: ${MODEL_SETTINGS_AUTH_USERNAME:admin}

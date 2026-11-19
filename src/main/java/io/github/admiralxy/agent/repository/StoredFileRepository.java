@@ -2,6 +2,7 @@ package io.github.admiralxy.agent.repository;
 
 import io.github.admiralxy.agent.domain.StoredFile;
 import io.github.admiralxy.agent.entity.StoredFileEntity;
+import io.github.admiralxy.agent.entity.StoredFileStorageRef;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -9,6 +10,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Optional;
 import java.util.UUID;
 
 public interface StoredFileRepository extends JpaRepository<StoredFileEntity, UUID> {
@@ -26,6 +28,13 @@ public interface StoredFileRepository extends JpaRepository<StoredFileEntity, UU
             countQuery = "select count(f) from StoredFileEntity f"
     )
     Page<StoredFile> findAllMetadata(Pageable pageable);
+
+    /**
+     * Returns where the file body is stored, without loading it.
+     */
+    @Query("select new io.github.admiralxy.agent.entity.StoredFileStorageRef(f.id, f.storagePath) "
+            + "from StoredFileEntity f where f.id = :id")
+    Optional<StoredFileStorageRef> findStorageRef(@Param("id") UUID id);
 
     /**
      * Deletes a file without loading its content into memory.

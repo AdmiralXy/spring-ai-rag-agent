@@ -1,14 +1,21 @@
 package io.github.admiralxy.agent.service.impl;
 
+import io.github.admiralxy.agent.config.properties.FilesProperties;
 import io.github.admiralxy.agent.domain.StoredFile;
 import io.github.admiralxy.agent.domain.StoredFileContent;
 import io.github.admiralxy.agent.entity.StoredFileEntity;
+import io.github.admiralxy.agent.entity.StoredFileStorageRef;
 import io.github.admiralxy.agent.exception.FileTooLargeException;
 import io.github.admiralxy.agent.exception.InvalidFileException;
 import io.github.admiralxy.agent.exception.StoredFileNotFoundException;
 import io.github.admiralxy.agent.repository.StoredFileRepository;
 import io.github.admiralxy.agent.service.FileStorageService;
-import org.springframework.beans.factory.annotation.Value;
+import io.github.admiralxy.agent.service.file.Base64Content;
+import io.github.admiralxy.agent.service.file.FileContentStore;
+import io.github.admiralxy.agent.service.file.FileNameRules;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -16,40 +23,41 @@ import org.springframework.http.MediaType;
 import org.springframework.http.MediaTypeFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.unit.DataSize;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-import java.util.Base64;
-import java.util.Locale;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.UUID;
-import java.util.regex.Pattern;
 
 @Service
 public class FileStorageServiceImpl implements FileStorageService {
 
     private static final int MAX_PAGE_SIZE = 100;
-    private static final int MAX_NAME_LENGTH = 255;
-    private static final Pattern EXTENSION_PATTERN = Pattern.compile("^[A-Za-z0-9]{1,20}$");
-    private static final Pattern FORBIDDEN_NAME_CHARS = Pattern.compile("[/\\\\\\p{Cntrl}]");
-    private static final Pattern WHITESPACE = Pattern.compile("\\s");
-    private static final String DATA_URL_PREFIX = "data:";
-    private static final String BASE64_MARKER = ";base64,";
+    private static final String ARCHIVE_EXTENSION = "zip";
+    private static final String ARCHIVE_CONTENT_TYPE = "application/zip";
 
     private final StoredFileRepository storedFileRepository;
+    private final FileContentStore contentStore;
     private final long maxSizeBytes;
 
     public FileStorageServiceImpl(
             StoredFileRepository storedFileRepository,
-            @Value("${app.files.max-size:10MB}") DataSize maxSize
+            FileContentStore contentStore,
+            FilesProperties properties
     ) {
         this.storedFileRepository = storedFileRepository;
-        this.maxSizeBytes = maxSize.toBytes();
+        this.contentStore = contentStore;
+        this.maxSizeBytes = properties.getMaxSize().toBytes();
     }
 
     @Override
     @Transactional
     public StoredFile upload(String name, String extension, String base64Content) {
-        String normalizedName = normalizeName(name);
-        String normalizedExtension = normalizeExtension(extension);
+        String normalizedName = FileNameRules.normalizeName(name);
+        String normalizedExtension = FileNameRules.normalizeExtension(extension);
         byte[] content = decode(base64Content);
 
         StoredFileEntity entity = new StoredFileEntity();
@@ -60,6 +68,27 @@ public class FileStorageServiceImpl implements FileStorageService {
         entity.setContent(content);
 
         return toDomain(storedFileRepository.save(entity));
+    }
+
+    @Override
+    @Transactional
+    public StoredFile storeArchive(String name, Path archive) {
+        String normalizedName = FileNameRules.normalizeName(name);
+        try {
+            long size = Files.size(archive);
+            String key = contentStore.importFile(archive);
+            onRollback(() -> contentStore.deleteQuietly(key));
+
+            StoredFileEntity entity = new StoredFileEntity();
+            entity.setName(normalizedName);
+            entity.setExtension(ARCHIVE_EXTENSION);
+            entity.setContentType(ARCHIVE_CONTENT_TYPE);
+            entity.setSize(size);
+            entity.setStoragePath(key);
+            return toDomain(storedFileRepository.save(entity));
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to store archive " + archive, e);
+        }
     }
 
     @Override
@@ -80,71 +109,39 @@ public class FileStorageServiceImpl implements FileStorageService {
     public StoredFileContent download(UUID id) {
         StoredFileEntity entity = storedFileRepository.findById(id)
                 .orElseThrow(() -> new StoredFileNotFoundException(id));
-        return new StoredFileContent(toDomain(entity), entity.getContent());
+        Resource body;
+        if (entity.getStoragePath() != null) {
+            Path path = contentStore.resolve(entity.getStoragePath());
+            if (!Files.isReadable(path)) {
+                throw new IllegalStateException("Content of file " + id + " is missing in storage");
+            }
+            body = new FileSystemResource(path);
+        } else {
+            body = new ByteArrayResource(entity.getContent());
+        }
+        return new StoredFileContent(toDomain(entity), body);
     }
 
     @Override
     @Transactional
     public void delete(UUID id) {
+        StoredFileStorageRef ref = storedFileRepository.findStorageRef(id)
+                .orElseThrow(() -> new StoredFileNotFoundException(id));
         if (storedFileRepository.deleteByIdDirectly(id) == 0) {
             throw new StoredFileNotFoundException(id);
         }
-    }
-
-    private String normalizeName(String name) {
-        if (name == null || name.isBlank()) {
-            throw new InvalidFileException("Field 'name' is required");
+        if (ref.storagePath() != null) {
+            afterCommit(() -> contentStore.deleteQuietly(ref.storagePath()));
         }
-        String trimmed = name.strip();
-        if (trimmed.length() > MAX_NAME_LENGTH) {
-            throw new InvalidFileException("Field 'name' must be at most " + MAX_NAME_LENGTH + " characters");
-        }
-        if (FORBIDDEN_NAME_CHARS.matcher(trimmed).find()) {
-            throw new InvalidFileException("Field 'name' must not contain '/', '\\' or control characters");
-        }
-        return trimmed;
-    }
-
-    private String normalizeExtension(String extension) {
-        if (extension == null || extension.isBlank()) {
-            throw new InvalidFileException("Field 'extension' is required");
-        }
-        String trimmed = extension.strip();
-        if (trimmed.startsWith(".")) {
-            trimmed = trimmed.substring(1);
-        }
-        if (!EXTENSION_PATTERN.matcher(trimmed).matches()) {
-            throw new InvalidFileException("Field 'extension' must be 1-20 latin letters or digits");
-        }
-        return trimmed.toLowerCase(Locale.ROOT);
     }
 
     private byte[] decode(String base64Content) {
-        if (base64Content == null || base64Content.isBlank()) {
-            throw new InvalidFileException("Field 'content' is required");
-        }
-        String data = base64Content;
-        if (data.startsWith(DATA_URL_PREFIX)) {
-            int markerIndex = data.indexOf(BASE64_MARKER);
-            if (markerIndex < 0) {
-                throw new InvalidFileException("Field 'content' is a data URL without base64 payload");
-            }
-            data = data.substring(markerIndex + BASE64_MARKER.length());
-        }
-        data = WHITESPACE.matcher(data).replaceAll("");
-
+        String data = Base64Content.payload(base64Content);
         // Reject oversized payloads before allocating the decoded array.
-        long estimatedSize = (long) data.length() * 3 / 4;
-        if (estimatedSize > maxSizeBytes + 2) {
+        if (Base64Content.estimateDecodedSize(data) > maxSizeBytes + 2) {
             throw new FileTooLargeException(maxSizeBytes);
         }
-
-        byte[] content;
-        try {
-            content = Base64.getDecoder().decode(data);
-        } catch (IllegalArgumentException e) {
-            throw new InvalidFileException("Field 'content' is not valid base64");
-        }
+        byte[] content = Base64Content.decode(data);
         if (content.length == 0) {
             throw new InvalidFileException("File must not be empty");
         }
@@ -158,6 +155,33 @@ public class FileStorageServiceImpl implements FileStorageService {
         return MediaTypeFactory.getMediaType("file." + extension)
                 .orElse(MediaType.APPLICATION_OCTET_STREAM)
                 .toString();
+    }
+
+    private static void afterCommit(Runnable action) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            action.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                action.run();
+            }
+        });
+    }
+
+    private static void onRollback(Runnable action) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status != STATUS_COMMITTED) {
+                    action.run();
+                }
+            }
+        });
     }
 
     private StoredFile toDomain(StoredFileEntity entity) {
