@@ -5,3 +5,5 @@ databaseChangeLog:
       file: db/changes/release/1.1/add-files-storage-path.yaml
   - include:
       file: db/changes/release/1.1/add-upload-sessions-tables.yaml
+  - include:
+      file: db/changes/release/1.1/add-upload-sessions-key-salt.yaml

@@ -36,8 +36,8 @@ import java.util.UUID;
 public class FileStorageServiceImpl implements FileStorageService {
 
     private static final int MAX_PAGE_SIZE = 100;
-    private static final String ARCHIVE_EXTENSION = "zip";
-    private static final String ARCHIVE_CONTENT_TYPE = "application/zip";
+    private static final String ARCHIVE_EXTENSION = "tar.zst";
+    private static final String ARCHIVE_CONTENT_TYPE = "application/zstd";
 
     private final StoredFileRepository storedFileRepository;
     private final FileContentStore contentStore;

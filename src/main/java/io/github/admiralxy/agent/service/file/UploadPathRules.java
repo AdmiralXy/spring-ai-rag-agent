@@ -2,14 +2,15 @@ package io.github.admiralxy.agent.service.file;
 
 import io.github.admiralxy.agent.exception.InvalidFileException;
 
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Set;
+import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
  * Validation rules for relative paths of files inside an uploaded folder archive.
+ * Error messages refer to files by index only: paths are confidential and must not appear in plaintext responses.
  */
 public final class UploadPathRules {
 
@@ -27,7 +28,7 @@ public final class UploadPathRules {
      * @param index position of the file in the request, used in error messages
      */
     public static String normalize(String rawPath, int index) {
-        String field = "Field 'files[" + index + "].path'";
+        String field = field(index);
         if (rawPath == null || rawPath.isEmpty()) {
             throw new InvalidFileException(field + " is required");
         }
@@ -57,22 +58,29 @@ public final class UploadPathRules {
 
     /**
      * Rejects case-insensitive duplicates and paths where a file is also used as a folder.
+     *
+     * @param paths normalized paths in request order
      */
     public static void checkConflicts(List<String> paths) {
-        Set<String> files = new HashSet<>();
-        for (String path : paths) {
-            if (!files.add(path.toLowerCase(Locale.ROOT))) {
-                throw new InvalidFileException("Duplicate path (case-insensitive): '" + path + "'");
+        Map<String, Integer> files = new HashMap<>();
+        for (int i = 0; i < paths.size(); i++) {
+            Integer previous = files.putIfAbsent(paths.get(i).toLowerCase(Locale.ROOT), i);
+            if (previous != null) {
+                throw new InvalidFileException(field(i) + " duplicates 'files[" + previous + "].path' (case-insensitive)");
             }
         }
-        for (String path : paths) {
-            String lower = path.toLowerCase(Locale.ROOT);
+        for (int i = 0; i < paths.size(); i++) {
+            String lower = paths.get(i).toLowerCase(Locale.ROOT);
             for (int slash = lower.indexOf('/'); slash > 0; slash = lower.indexOf('/', slash + 1)) {
-                String parent = lower.substring(0, slash);
-                if (files.contains(parent)) {
-                    throw new InvalidFileException("Path '" + path + "' uses '" + parent + "' as a folder, but it is also a file");
+                Integer parent = files.get(lower.substring(0, slash));
+                if (parent != null) {
+                    throw new InvalidFileException(field(i) + " uses 'files[" + parent + "].path' as a folder, but it is a file");
                 }
             }
         }
+    }
+
+    private static String field(int index) {
+        return "Field 'files[" + index + "].path'";
     }
 }

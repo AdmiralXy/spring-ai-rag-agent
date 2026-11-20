@@ -137,8 +137,8 @@ class FileStorageServiceImplTest {
         assertNull(entity.getContent());
         assertFalse(Files.exists(archive));
         assertArrayEquals(body, Files.readAllBytes(contentStore.resolve(entity.getStoragePath())));
-        assertEquals("Проект.zip", file.fileName());
-        assertEquals("application/zip", file.contentType());
+        assertEquals("Проект.tar.zst", file.fileName());
+        assertEquals("application/zstd", file.contentType());
         assertEquals(100, file.size());
     }
 

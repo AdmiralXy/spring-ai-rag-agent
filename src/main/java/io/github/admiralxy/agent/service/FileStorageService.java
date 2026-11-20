@@ -20,7 +20,7 @@ public interface FileStorageService {
     StoredFile upload(String name, String extension, String base64Content);
 
     /**
-     * Moves a ready ZIP archive into disk storage and registers it as a file ({@code <name>.zip}).
+     * Moves a ready archive into disk storage and registers it as a file ({@code <name>.tar.zst}).
      * Not subject to the POST /files size limit. If the surrounding transaction rolls back,
      * the moved archive is deleted.
      */

@@ -34,7 +34,7 @@ import java.util.stream.Stream;
 public class UploadChunkStore {
 
     private static final Pattern CHUNK_FILE = Pattern.compile("^(\\d+)\\.(\\d+)\\.part$");
-    private static final String ARCHIVE_FILE = "archive.zip.tmp";
+    private static final String ARCHIVE_FILE = "archive.tmp";
 
     private final Path root;
 

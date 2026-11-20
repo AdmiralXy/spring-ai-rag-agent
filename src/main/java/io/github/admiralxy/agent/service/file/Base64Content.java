@@ -49,4 +49,20 @@ public final class Base64Content {
             throw new InvalidFileException("Field 'content' is not valid base64");
         }
     }
+
+    /**
+     * Decodes a required plain base64 field.
+     *
+     * @param field field name used in error messages
+     */
+    public static byte[] decodeField(String value, String field) {
+        if (value == null || value.isEmpty()) {
+            throw new InvalidFileException("Field '" + field + "' is required");
+        }
+        try {
+            return Base64.getDecoder().decode(value);
+        } catch (IllegalArgumentException e) {
+            throw new InvalidFileException("Field '" + field + "' is not valid base64");
+        }
+    }
 }

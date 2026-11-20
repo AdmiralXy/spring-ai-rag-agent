@@ -1,0 +1,16 @@
+databaseChangeLog:
+  - changeSet:
+      id: add-upload-sessions-key-salt
+      author: AdmiralXy
+      comment: Upload sessions become encrypted; unencrypted sessions in progress cannot be continued and are dropped
+      changes:
+        - delete:
+            tableName: t_upload_sessions
+        - addColumn:
+            tableName: t_upload_sessions
+            columns:
+              - column:
+                  name: c_key_salt
+                  type: bytea
+                  constraints:
+                    nullable: false

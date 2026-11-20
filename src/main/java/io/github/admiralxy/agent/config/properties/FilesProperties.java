@@ -16,9 +16,14 @@ import java.time.Duration;
 public class FilesProperties implements InitializingBean {
 
     /**
-     * Reserve for JSON syntax, field name and data URL prefix around a base64 chunk.
+     * Reserve for JSON syntax, field names and the IV around an encrypted base64 chunk.
      */
     private static final long REQUEST_OVERHEAD_BYTES = 1024;
+
+    /**
+     * AES-GCM authentication tag appended to every ciphertext.
+     */
+    private static final long GCM_TAG_BYTES = 16;
 
     /**
      * Max decoded size of a file uploaded via POST /files.
@@ -44,10 +49,21 @@ public class FilesProperties implements InitializingBean {
         if (uploads.maxFiles <= 0) {
             throw new IllegalStateException("app.files.uploads.max-files must be positive");
         }
-        long minRequest = (chunk + 2) / 3 * 4 + REQUEST_OVERHEAD_BYTES;
+        if (uploads.maxBatchChunks <= 0) {
+            throw new IllegalStateException("app.files.uploads.max-batch-chunks must be positive");
+        }
+        long minRequest = (chunk + GCM_TAG_BYTES + 2) / 3 * 4 + REQUEST_OVERHEAD_BYTES;
         if (uploads.maxRequestSize.toBytes() < minRequest) {
             throw new IllegalStateException("app.files.uploads.max-request-size must be at least " + minRequest
-                    + " bytes to fit a base64-encoded chunk of " + chunk + " bytes");
+                    + " bytes to fit an encrypted base64 chunk of " + chunk + " bytes");
+        }
+        Encryption encryption = uploads.encryption;
+        if (encryption.kdfSalt == null || encryption.kdfSalt.isEmpty()) {
+            throw new IllegalStateException("app.files.uploads.encryption.kdf-salt must not be empty");
+        }
+        if (encryption.kdfIterations < Encryption.MIN_KDF_ITERATIONS) {
+            throw new IllegalStateException("app.files.uploads.encryption.kdf-iterations must be at least "
+                    + Encryption.MIN_KDF_ITERATIONS);
         }
     }
 
@@ -71,6 +87,11 @@ public class FilesProperties implements InitializingBean {
         private int maxFiles = 10_000;
 
         /**
+         * Max number of chunks in one batch request.
+         */
+        private int maxBatchChunks = 1000;
+
+        /**
          * Max JSON request body size for upload endpoints.
          */
         private DataSize maxRequestSize = DataSize.ofMegabytes(7);
@@ -89,5 +110,27 @@ public class FilesProperties implements InitializingBean {
          * Interval of the expired sessions cleanup job.
          */
         private Duration cleanupInterval = Duration.ofMinutes(15);
+
+        /**
+         * Application-level encryption of upload requests.
+         */
+        private Encryption encryption = new Encryption();
+    }
+
+    @Getter
+    @Setter
+    public static class Encryption {
+
+        static final int MIN_KDF_ITERATIONS = 1;
+
+        /**
+         * PBKDF2 salt (UTF-8 string), public; published to clients via GET /files/uploads/config.
+         */
+        private String kdfSalt = "default-kdf-salt";
+
+        /**
+         * PBKDF2-HMAC-SHA256 iterations.
+         */
+        private int kdfIterations = 600_000;
     }
 }

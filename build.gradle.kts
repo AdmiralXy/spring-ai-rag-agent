@@ -53,6 +53,10 @@ dependencies {
     implementation("org.eclipse.jgit:org.eclipse.jgit:7.3.0.202506031305-r")
     implementation("org.jsoup:jsoup:1.18.3")
 
+    // Archives (tar + pure-Java zstd, no native code)
+    implementation("org.apache.commons:commons-compress:1.28.0")
+    implementation("io.airlift:aircompressor-v3:3.16")
+
     // Lombok
     compileOnly("org.projectlombok:lombok:1.18.42")
     annotationProcessor("org.projectlombok:lombok:1.18.42")

@@ -22,7 +22,7 @@ public class JdbcUploadSessionStore implements UploadSessionStore {
 
     private static final int INSERT_BATCH_SIZE = 1000;
 
-    private static final String SESSION_COLUMNS = "c_id, c_name, c_chunk_size, c_status, c_created_at, c_expires_at";
+    private static final String SESSION_COLUMNS = "c_id, c_name, c_chunk_size, c_status, c_created_at, c_expires_at, c_key_salt";
     private static final String FILE_COLUMNS = "c_index, c_path, c_size, c_chunk_count";
 
     private static final RowMapper<UploadSession> SESSION_MAPPER = (rs, rowNum) -> new UploadSession(
@@ -31,7 +31,8 @@ public class JdbcUploadSessionStore implements UploadSessionStore {
             rs.getLong("c_chunk_size"),
             UploadSessionStatus.valueOf(rs.getString("c_status")),
             rs.getObject("c_created_at", OffsetDateTime.class).toInstant(),
-            rs.getObject("c_expires_at", OffsetDateTime.class).toInstant()
+            rs.getObject("c_expires_at", OffsetDateTime.class).toInstant(),
+            rs.getBytes("c_key_salt")
     );
 
     private static final RowMapper<UploadSessionFile> FILE_MAPPER = (rs, rowNum) -> new UploadSessionFile(
@@ -47,9 +48,9 @@ public class JdbcUploadSessionStore implements UploadSessionStore {
     @Transactional
     public void create(UploadSession session, List<UploadSessionFile> files) {
         jdbcTemplate.update(
-                "insert into t_upload_sessions (" + SESSION_COLUMNS + ") values (?, ?, ?, ?, ?, ?)",
+                "insert into t_upload_sessions (" + SESSION_COLUMNS + ") values (?, ?, ?, ?, ?, ?, ?)",
                 session.id(), session.name(), session.chunkSize(), session.status().name(),
-                ts(session.createdAt()), ts(session.expiresAt())
+                ts(session.createdAt()), ts(session.expiresAt()), session.keySalt()
         );
         jdbcTemplate.batchUpdate(
                 "insert into t_upload_session_files (c_session_id, " + FILE_COLUMNS + ") values (?, ?, ?, ?, ?)",

@@ -1,5 +1,7 @@
 package io.github.admiralxy.agent.service.impl;
 
+import io.airlift.compress.v3.zstd.ZstdJavaInputStream;
+import io.github.admiralxy.agent.config.properties.AdminProperties;
 import io.github.admiralxy.agent.config.properties.FilesProperties;
 import io.github.admiralxy.agent.domain.StoredFile;
 import io.github.admiralxy.agent.domain.UploadSessionFile;
@@ -9,40 +11,47 @@ import io.github.admiralxy.agent.entity.StoredFileEntity;
 import io.github.admiralxy.agent.exception.InvalidFileException;
 import io.github.admiralxy.agent.exception.LimitExceededException;
 import io.github.admiralxy.agent.exception.UploadConflictException;
+import io.github.admiralxy.agent.exception.UploadDecryptionException;
 import io.github.admiralxy.agent.exception.UploadExpiredException;
 import io.github.admiralxy.agent.exception.UploadNotFoundException;
 import io.github.admiralxy.agent.repository.StoredFileRepository;
+import io.github.admiralxy.agent.service.EncryptedChunk;
+import io.github.admiralxy.agent.service.EncryptedPayload;
 import io.github.admiralxy.agent.service.UploadFileSpec;
+import io.github.admiralxy.agent.service.UploadManifest;
 import io.github.admiralxy.agent.service.file.FileContentStore;
 import io.github.admiralxy.agent.service.file.UploadChunkStore;
+import io.github.admiralxy.agent.service.file.UploadCrypto;
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import org.springframework.util.unit.DataSize;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Base64;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -57,43 +66,62 @@ class UploadSessionServiceImplTest {
 
     private static final int CHUNK_SIZE = 4;
     private static final Duration TTL = Duration.ofHours(1);
+    private static final String PASSWORD = "test-upload-password";
 
     @TempDir
     Path tempDir;
 
+    private final SecureRandom random = new SecureRandom();
+    private final JsonMapper jsonMapper = JsonMapper.builder().build();
     private final InMemoryUploadSessionStore store = new InMemoryUploadSessionStore();
     private final StoredFileRepository fileRepository = Mockito.mock(StoredFileRepository.class);
     private final MutableClock clock = new MutableClock(Instant.parse("2026-11-19T10:00:00Z"));
+    private final Map<UUID, byte[]> keySalts = new ConcurrentHashMap<>();
     private FileContentStore contentStore;
     private Path uploadsDir;
+    private UploadCrypto crypto;
     private UploadSessionServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        FilesProperties properties = new FilesProperties();
-        properties.setStorageDir(tempDir.resolve("files").toString());
-        FilesProperties.Uploads uploads = properties.getUploads();
-        uploads.setChunkSize(DataSize.ofBytes(CHUNK_SIZE));
-        uploads.setMaxTotalSize(DataSize.ofBytes(1000));
-        uploads.setMaxFiles(10);
-        uploads.setTtl(TTL);
+        FilesProperties properties = properties();
         uploadsDir = tempDir.resolve("uploads");
-        uploads.setTempDir(uploadsDir.toString());
-        properties.afterPropertiesSet();
-
         contentStore = new FileContentStore(properties);
+        crypto = new UploadCrypto(properties, admin(PASSWORD));
         FileStorageServiceImpl fileStorageService = new FileStorageServiceImpl(fileRepository, contentStore, properties);
         when(fileRepository.save(any())).thenAnswer(inv -> {
             StoredFileEntity entity = inv.getArgument(0);
             entity.setId(UUID.randomUUID());
             return entity;
         });
-        service = new UploadSessionServiceImpl(
-                store, new UploadChunkStore(properties), fileStorageService, new NoOpTransactionManager(), clock, properties);
+        service = new UploadSessionServiceImpl(store, new UploadChunkStore(properties), crypto, fileStorageService,
+                jsonMapper, new NoOpTransactionManager(), clock, properties);
+    }
+
+    private static AdminProperties admin(String password) {
+        AdminProperties admin = new AdminProperties();
+        admin.setPassword(password);
+        admin.afterPropertiesSet();
+        return admin;
+    }
+
+    private FilesProperties properties() {
+        FilesProperties properties = new FilesProperties();
+        properties.setStorageDir(tempDir.resolve("files").toString());
+        FilesProperties.Uploads uploads = properties.getUploads();
+        uploads.setChunkSize(DataSize.ofBytes(CHUNK_SIZE));
+        uploads.setMaxTotalSize(DataSize.ofBytes(1000));
+        uploads.setMaxFiles(100);
+        uploads.setMaxBatchChunks(50);
+        uploads.setTtl(TTL);
+        uploads.setTempDir(tempDir.resolve("uploads").toString());
+        uploads.getEncryption().setKdfIterations(1000);
+        properties.afterPropertiesSet();
+        return properties;
     }
 
     @Test
-    void completeBuildsZipWithNestedFoldersCyrillicPathsAndEmptyFiles() throws Exception {
+    void completeBuildsTarZstWithNestedFoldersCyrillicPathsAndEmptyFiles() throws Exception {
         Map<String, byte[]> files = new LinkedHashMap<>();
         files.put("Мой проект/src/main.ts", bytes("console.log('привет')"));
         files.put("Мой проект/README.md", new byte[0]);
@@ -104,35 +132,79 @@ class UploadSessionServiceImplTest {
         assertEquals(CHUNK_SIZE, state.session().chunkSize());
         assertEquals(List.of(7, 0, 1, 0), state.files().stream().map(UploadSessionFile::chunkCount).toList());
 
-        sendAll(state, files, true);
-        StoredFile stored = service.complete(state.session().id());
+        sendAllOneByOne(state, files, true);
+        StoredFile stored = complete(state.session().id());
 
-        assertEquals("Мой проект.zip", stored.fileName());
-        assertEquals("application/zip", stored.contentType());
+        assertEquals("Мой проект.tar.zst", stored.fileName());
+        assertEquals("tar.zst", stored.extension());
+        assertEquals("application/zstd", stored.contentType());
         Path archive = storedArchive();
         assertEquals(Files.size(archive), stored.size());
 
-        Map<String, byte[]> entries = unzip(archive);
+        Map<String, byte[]> entries = untar(archive);
         assertEquals(files.keySet(), fileEntries(entries).keySet());
         files.forEach((path, content) -> assertArrayEquals(content, entries.get(path), path));
         assertTrue(entries.containsKey("Мой проект/"));
         assertTrue(entries.containsKey("Мой проект/docs/глава 1/"));
-        assertTrue(hasUtf8Flag(archive));
+        assertTrue(hasZstdMagic(archive));
+        assertTrue(hasNeutralOwnership(archive));
 
         assertThrows(UploadNotFoundException.class, () -> service.getStatus(state.session().id()));
         assertFalse(Files.exists(uploadsDir.resolve(state.session().id().toString())));
     }
 
     @Test
-    void chunksAcceptDataUrls() throws Exception {
-        UploadSessionState state = create("a", Map.of("a.txt", bytes("hello")));
+    void smallFilesAreUploadedInOneBatch() throws Exception {
+        Map<String, byte[]> files = new LinkedHashMap<>();
+        for (int i = 0; i < 30; i++) {
+            files.put("src/file-" + i + ".txt", bytes("f" + i));
+        }
+        files.put("big.bin", bytes("0123456789"));
+        UploadSessionState state = create("mixed", files);
         UUID id = state.session().id();
+        List<byte[]> contents = List.copyOf(files.values());
 
-        service.putChunk(id, 0, 0, "data:application/octet-stream;base64," + b64(bytes("hell")));
-        service.putChunk(id, 0, 1, b64(bytes("o")));
-        service.complete(id);
+        List<EncryptedChunk> batch = new ArrayList<>();
+        for (int i = 0; i < 30; i++) {
+            batch.add(chunk(id, i, 0, contents.get(i)));
+        }
+        service.putChunks(id, batch);
+        for (int c = 0; c < 3; c++) {
+            put(id, 30, c, slice(contents.get(30), c));
+        }
+        complete(id);
 
-        assertArrayEquals(bytes("hello"), unzip(storedArchive()).get("a.txt"));
+        Map<String, byte[]> entries = untar(storedArchive());
+        files.forEach((path, content) -> assertArrayEquals(content, entries.get(path), path));
+    }
+
+    @Test
+    void invalidBatchIsRejectedEntirely() {
+        Map<String, byte[]> files = new LinkedHashMap<>();
+        files.put("a.txt", bytes("ab"));
+        files.put("b.txt", bytes("cd"));
+        UUID id = create("a", files).session().id();
+
+        InvalidFileException e = assertThrows(InvalidFileException.class, () -> service.putChunks(id, List.of(
+                chunk(id, 0, 0, bytes("ab")),
+                chunk(id, 1, 0, bytes("cde")))));
+        assertTrue(e.getMessage().startsWith("chunks[1]: "), e.getMessage());
+
+        assertThrows(UploadDecryptionException.class, () -> service.putChunks(id, List.of(
+                chunk(id, 0, 0, bytes("ab")),
+                new EncryptedChunk(1, 0, chunk(id, 0, 0, bytes("cd")).payload()))));
+
+        assertTrue(service.getStatus(id).receivedChunks().isEmpty());
+    }
+
+    @Test
+    void batchLimitsAreEnforced() {
+        UUID id = create("a", Map.of("a.txt", bytes("ab"))).session().id();
+        EncryptedChunk chunk = chunk(id, 0, 0, bytes("ab"));
+
+        assertThrows(InvalidFileException.class, () -> service.putChunks(id, List.of()));
+        assertThrows(InvalidFileException.class, () -> service.putChunks(id, List.of(chunk, chunk)));
+        assertThrows(LimitExceededException.class, () -> service.putChunks(id, Collections.nCopies(51, chunk)));
     }
 
     @Test
@@ -140,12 +212,12 @@ class UploadSessionServiceImplTest {
         UploadSessionState state = create("a", Map.of("a.txt", bytes("abcdef")));
         UUID id = state.session().id();
 
-        service.putChunk(id, 0, 0, b64(bytes("XXXX")));
-        service.putChunk(id, 0, 1, b64(bytes("ef")));
-        service.putChunk(id, 0, 0, b64(bytes("abcd")));
-        service.complete(id);
+        put(id, 0, 0, bytes("XXXX"));
+        put(id, 0, 1, bytes("ef"));
+        put(id, 0, 0, bytes("abcd"));
+        complete(id);
 
-        assertArrayEquals(bytes("abcdef"), unzip(storedArchive()).get("a.txt"));
+        assertArrayEquals(bytes("abcdef"), untar(storedArchive()).get("a.txt"));
     }
 
     @Test
@@ -153,26 +225,61 @@ class UploadSessionServiceImplTest {
         UploadSessionState state = create("a", Map.of("a.txt", bytes("abcdef")));
         UUID id = state.session().id();
 
-        InvalidFileException shortChunk = assertThrows(InvalidFileException.class, () -> service.putChunk(id, 0, 0, b64(bytes("abc"))));
-        assertTrue(shortChunk.getMessage().contains("must be 4 bytes, got 3"), shortChunk.getMessage());
-        assertThrows(InvalidFileException.class, () -> service.putChunk(id, 0, 1, b64(bytes("efg"))));
-        assertThrows(InvalidFileException.class, () -> service.putChunk(id, 0, 0, "%%%"));
+        InvalidFileException shortChunk = assertThrows(InvalidFileException.class, () -> put(id, 0, 0, bytes("abc")));
+        assertEquals("Chunk 0 of file 0 must be 4 bytes before encryption, got 3", shortChunk.getMessage());
+        assertThrows(InvalidFileException.class, () -> put(id, 0, 1, bytes("efg")));
         assertTrue(service.getStatus(id).receivedChunks().isEmpty());
     }
 
     @Test
-    void completeWithMissingChunksReturnsConflict() {
+    void wrongPasswordIsRejectedOnCreate() {
+        UploadCrypto otherCrypto = new UploadCrypto(properties(), admin("another-upload-password"));
+        byte[] keySalt = randomBytes(UploadCrypto.KEY_SALT_LENGTH);
+        byte[] iv = randomBytes(UploadCrypto.IV_LENGTH);
+        byte[] manifest = jsonMapper.writeValueAsBytes(new UploadManifest("a", List.of(new UploadFileSpec("a.txt", 1L))));
+        byte[] data = otherCrypto.encrypt(keySalt, iv, manifest, UploadCrypto.createAad());
+
+        assertThrows(UploadDecryptionException.class, () -> service.create(keySalt, new EncryptedPayload(iv, data)));
+    }
+
+    @Test
+    void chunksAreBoundToTheirPositionAndSession() {
         Map<String, byte[]> files = new LinkedHashMap<>();
-        files.put("dir/first.bin", bytes("abcdefgh"));
-        files.put("dir/second.bin", bytes("ab"));
+        files.put("a.txt", bytes("ab"));
+        files.put("b.txt", bytes("cd"));
+        UUID id = create("a", files).session().id();
+        UUID other = create("b", files).session().id();
+
+        EncryptedPayload forFile0 = chunk(id, 0, 0, bytes("cd")).payload();
+        assertThrows(UploadDecryptionException.class, () -> service.putChunk(id, new EncryptedChunk(1, 0, forFile0)));
+        assertThrows(UploadDecryptionException.class, () -> service.putChunk(other, new EncryptedChunk(0, 0, forFile0)));
+    }
+
+    @Test
+    void completeAndCancelRequireValidProof() {
+        UUID id = create("a", Map.of("a.txt", new byte[0])).session().id();
+        UUID other = create("b", Map.of("b.txt", new byte[0])).session().id();
+
+        assertThrows(UploadDecryptionException.class, () -> service.complete(id, proof(id, "cancel")));
+        assertThrows(UploadDecryptionException.class, () -> service.complete(id, proof(other, "complete")));
+        assertThrows(UploadDecryptionException.class, () -> service.cancel(id, proof(id, "complete")));
+        assertTrue(store.exists(id));
+
+        complete(id);
+    }
+
+    @Test
+    void completeWithMissingChunksReturnsConflictWithoutPaths() {
+        Map<String, byte[]> files = new LinkedHashMap<>();
+        files.put("secret-dir/first.bin", bytes("abcdefgh"));
+        files.put("secret-dir/second.bin", bytes("ab"));
         UploadSessionState state = create("a", files);
         UUID id = state.session().id();
-        service.putChunk(id, 0, 1, b64(bytes("efgh")));
+        put(id, 0, 1, bytes("efgh"));
 
-        UploadConflictException e = assertThrows(UploadConflictException.class, () -> service.complete(id));
+        UploadConflictException e = assertThrows(UploadConflictException.class, () -> complete(id));
 
-        assertTrue(e.getMessage().startsWith("2 chunk(s) are missing"), e.getMessage());
-        assertTrue(e.getMessage().contains("'dir/first.bin' chunk 0"), e.getMessage());
+        assertEquals("2 chunk(s) are missing; first missing: file 0 chunk 0", e.getMessage());
         assertEquals(UploadSessionStatus.ACTIVE, store.find(id).orElseThrow().status());
     }
 
@@ -180,8 +287,8 @@ class UploadSessionServiceImplTest {
     void statusReportsReceivedChunks() {
         UploadSessionState state = create("a", Map.of("a.bin", new byte[10]));
         UUID id = state.session().id();
-        service.putChunk(id, 0, 2, b64(new byte[2]));
-        service.putChunk(id, 0, 0, b64(new byte[4]));
+        put(id, 0, 2, new byte[2]);
+        put(id, 0, 0, new byte[4]);
 
         UploadSessionState status = service.getStatus(id);
 
@@ -193,7 +300,9 @@ class UploadSessionServiceImplTest {
         List<String> invalid = List.of("../secret", "a/../b", "/etc/passwd", "C:/x.txt", "C:\\x.txt", "\\\\server\\share",
                 "a//b", "a/./b", "a/", ".", "", "a\u0001b", "x".repeat(1025));
         for (String path : invalid) {
-            assertThrows(InvalidFileException.class, () -> createRaw("a", List.of(new UploadFileSpec(path, 1L))), path);
+            InvalidFileException e = assertThrows(InvalidFileException.class,
+                    () -> createRaw("a", List.of(new UploadFileSpec(path, 1L))), path);
+            assertTrue(e.getMessage().startsWith("Field 'files[0].path'"), e.getMessage());
         }
     }
 
@@ -205,11 +314,14 @@ class UploadSessionServiceImplTest {
     }
 
     @Test
-    void duplicateAndConflictingPathsAreRejected() {
-        assertThrows(InvalidFileException.class, () -> createRaw("a", List.of(
+    void duplicateAndConflictingPathsAreRejectedByIndex() {
+        InvalidFileException duplicate = assertThrows(InvalidFileException.class, () -> createRaw("a", List.of(
                 new UploadFileSpec("Dir/File.txt", 1L), new UploadFileSpec("dir/file.TXT", 1L))));
-        assertThrows(InvalidFileException.class, () -> createRaw("a", List.of(
+        assertEquals("Field 'files[1].path' duplicates 'files[0].path' (case-insensitive)", duplicate.getMessage());
+
+        InvalidFileException conflict = assertThrows(InvalidFileException.class, () -> createRaw("a", List.of(
                 new UploadFileSpec("a", 1L), new UploadFileSpec("A/b.txt", 1L))));
+        assertEquals("Field 'files[1].path' uses 'files[0].path' as a folder, but it is a file", conflict.getMessage());
     }
 
     @Test
@@ -219,12 +331,16 @@ class UploadSessionServiceImplTest {
         assertThrows(InvalidFileException.class, () -> createRaw("a", List.of(new UploadFileSpec("a.txt", -1L))));
         assertThrows(InvalidFileException.class, () -> createRaw("a", List.of(new UploadFileSpec("a.txt", null))));
         assertThrows(InvalidFileException.class, () -> createRaw("../a", List.of(new UploadFileSpec("a.txt", 1L))));
+        byte[] keySalt = randomBytes(UploadCrypto.KEY_SALT_LENGTH);
+        byte[] iv = randomBytes(UploadCrypto.IV_LENGTH);
+        byte[] notJson = crypto.encrypt(keySalt, iv, bytes("not json"), UploadCrypto.createAad());
+        assertThrows(InvalidFileException.class, () -> service.create(keySalt, new EncryptedPayload(iv, notJson)));
     }
 
     @Test
     void limitsAreEnforced() {
         List<UploadFileSpec> tooMany = new ArrayList<>();
-        for (int i = 0; i < 11; i++) {
+        for (int i = 0; i < 101; i++) {
             tooMany.add(new UploadFileSpec("f" + i, 1L));
         }
         assertThrows(LimitExceededException.class, () -> createRaw("a", tooMany));
@@ -239,24 +355,25 @@ class UploadSessionServiceImplTest {
         files.put("a.txt", bytes("ab"));
         files.put("empty.txt", new byte[0]);
         UUID id = create("a", files).session().id();
+        EncryptedPayload any = chunk(id, 0, 0, bytes("ab")).payload();
 
-        assertThrows(UploadNotFoundException.class, () -> service.putChunk(UUID.randomUUID(), 0, 0, b64(bytes("ab"))));
-        assertThrows(UploadNotFoundException.class, () -> service.putChunk(id, 5, 0, b64(bytes("ab"))));
-        assertThrows(UploadNotFoundException.class, () -> service.putChunk(id, 0, 1, b64(bytes("ab"))));
-        assertThrows(UploadNotFoundException.class, () -> service.putChunk(id, 0, -1, b64(bytes("ab"))));
-        assertThrows(UploadNotFoundException.class, () -> service.putChunk(id, 1, 0, b64(bytes("ab"))));
+        assertThrows(UploadNotFoundException.class, () -> service.putChunk(UUID.randomUUID(), new EncryptedChunk(0, 0, any)));
+        assertThrows(UploadNotFoundException.class, () -> service.putChunk(id, new EncryptedChunk(5, 0, any)));
+        assertThrows(UploadNotFoundException.class, () -> service.putChunk(id, new EncryptedChunk(0, 1, any)));
+        assertThrows(UploadNotFoundException.class, () -> service.putChunk(id, new EncryptedChunk(0, -1, any)));
+        assertThrows(UploadNotFoundException.class, () -> service.putChunk(id, new EncryptedChunk(1, 0, any)));
     }
 
     @Test
     void expiredSessionIsRejectedAndCleanedUp() {
         UUID id = create("a", Map.of("a.txt", bytes("abcdef"))).session().id();
-        service.putChunk(id, 0, 0, b64(bytes("abcd")));
+        put(id, 0, 0, bytes("abcd"));
 
         clock.advance(TTL.plusSeconds(1));
 
-        assertThrows(UploadExpiredException.class, () -> service.putChunk(id, 0, 1, b64(bytes("ef"))));
+        assertThrows(UploadExpiredException.class, () -> put(id, 0, 1, bytes("ef")));
         assertThrows(UploadExpiredException.class, () -> service.getStatus(id));
-        assertThrows(UploadExpiredException.class, () -> service.complete(id));
+        assertThrows(UploadExpiredException.class, () -> complete(id));
         assertTrue(Files.exists(uploadsDir.resolve(id.toString())));
 
         assertEquals(1, service.cleanupExpired());
@@ -270,13 +387,13 @@ class UploadSessionServiceImplTest {
         UUID id = create("a", Map.of("a.txt", bytes("abcdef"))).session().id();
 
         clock.advance(Duration.ofMinutes(50));
-        service.putChunk(id, 0, 0, b64(bytes("abcd")));
+        put(id, 0, 0, bytes("abcd"));
         clock.advance(Duration.ofMinutes(50));
 
         assertEquals(clock.instant().minus(Duration.ofMinutes(50)).plus(TTL), service.getStatus(id).session().expiresAt());
-        service.putChunk(id, 0, 1, b64(bytes("ef")));
+        put(id, 0, 1, bytes("ef"));
         assertEquals(0, service.cleanupExpired());
-        service.complete(id);
+        complete(id);
     }
 
     @Test
@@ -284,7 +401,7 @@ class UploadSessionServiceImplTest {
         Path orphan = Files.createDirectories(uploadsDir.resolve(UUID.randomUUID().toString()));
         Files.write(orphan.resolve("0.0.part"), bytes("x"));
         UUID active = create("a", Map.of("a.txt", bytes("ab"))).session().id();
-        service.putChunk(active, 0, 0, b64(bytes("ab")));
+        put(active, 0, 0, bytes("ab"));
 
         service.cleanupExpired();
 
@@ -297,33 +414,33 @@ class UploadSessionServiceImplTest {
         UUID id = create("a", Map.of("a.txt", bytes("ab"))).session().id();
         store.updateStatus(id, UploadSessionStatus.COMPLETING, clock.instant().plus(TTL));
 
-        assertThrows(UploadConflictException.class, () -> service.putChunk(id, 0, 0, b64(bytes("ab"))));
-        assertThrows(UploadConflictException.class, () -> service.complete(id));
+        assertThrows(UploadConflictException.class, () -> put(id, 0, 0, bytes("ab")));
+        assertThrows(UploadConflictException.class, () -> complete(id));
     }
 
     @Test
     void secondCompleteAndCancelledSessionReturnNotFound() {
         UUID completed = create("a", Map.of("a.txt", new byte[0])).session().id();
-        service.complete(completed);
-        assertThrows(UploadNotFoundException.class, () -> service.complete(completed));
+        complete(completed);
+        assertThrows(UploadNotFoundException.class, () -> complete(completed));
 
         UUID cancelled = create("b", Map.of("b.txt", bytes("ab"))).session().id();
-        service.putChunk(cancelled, 0, 0, b64(bytes("ab")));
-        service.cancel(cancelled);
+        put(cancelled, 0, 0, bytes("ab"));
+        cancel(cancelled);
 
         assertFalse(Files.exists(uploadsDir.resolve(cancelled.toString())));
-        assertThrows(UploadNotFoundException.class, () -> service.putChunk(cancelled, 0, 0, b64(bytes("ab"))));
-        assertThrows(UploadNotFoundException.class, () -> service.complete(cancelled));
-        assertThrows(UploadNotFoundException.class, () -> service.cancel(cancelled));
+        assertThrows(UploadNotFoundException.class, () -> put(cancelled, 0, 0, bytes("ab")));
+        assertThrows(UploadNotFoundException.class, () -> complete(cancelled));
+        assertThrows(UploadNotFoundException.class, () -> cancel(cancelled));
     }
 
     @Test
-    void parallelChunkUploadsAreAllRecorded() throws Exception {
-        Random random = new Random(42);
+    void parallelSingleAndBatchUploadsAreAllRecorded() throws Exception {
+        Random seeded = new Random(42);
         Map<String, byte[]> files = new LinkedHashMap<>();
         for (int i = 0; i < 5; i++) {
             byte[] content = new byte[150 + i];
-            random.nextBytes(content);
+            seeded.nextBytes(content);
             files.put("parallel/file-" + i + ".bin", content);
         }
         UploadSessionState state = create("parallel", files);
@@ -332,16 +449,19 @@ class UploadSessionServiceImplTest {
 
         List<Runnable> tasks = new ArrayList<>();
         for (UploadSessionFile file : state.files()) {
+            List<EncryptedChunk> fileChunks = new ArrayList<>();
             for (int chunk = 0; chunk < file.chunkCount(); chunk++) {
-                int index = file.index();
-                int chunkIndex = chunk;
-                String payload = b64(slice(contents.get(index), chunkIndex));
-                tasks.add(() -> service.putChunk(id, index, chunkIndex, payload));
-                // duplicates race with the original upload of the same chunk
-                tasks.add(() -> service.putChunk(id, index, chunkIndex, payload));
+                EncryptedChunk encrypted = chunk(id, file.index(), chunk, slice(contents.get(file.index()), chunk));
+                fileChunks.add(encrypted);
+                tasks.add(() -> service.putChunk(id, encrypted));
+            }
+            // the same chunks again as batches, racing with the single uploads
+            for (int from = 0; from < fileChunks.size(); from += 10) {
+                List<EncryptedChunk> batch = fileChunks.subList(from, Math.min(fileChunks.size(), from + 10));
+                tasks.add(() -> service.putChunks(id, batch));
             }
         }
-        Collections.shuffle(tasks, random);
+        Collections.shuffle(tasks, seeded);
         ExecutorService executor = Executors.newFixedThreadPool(8);
         try {
             List<Future<?>> futures = tasks.stream().<Future<?>>map(executor::submit).toList();
@@ -352,9 +472,9 @@ class UploadSessionServiceImplTest {
             executor.shutdownNow();
         }
 
-        service.complete(id);
+        complete(id);
 
-        Map<String, byte[]> entries = unzip(storedArchive());
+        Map<String, byte[]> entries = untar(storedArchive());
         files.forEach((path, content) -> assertArrayEquals(content, entries.get(path), path));
     }
 
@@ -365,10 +485,39 @@ class UploadSessionServiceImplTest {
     }
 
     private UploadSessionState createRaw(String name, List<UploadFileSpec> files) {
-        return service.create(name, files);
+        byte[] keySalt = randomBytes(UploadCrypto.KEY_SALT_LENGTH);
+        byte[] iv = randomBytes(UploadCrypto.IV_LENGTH);
+        byte[] manifest = jsonMapper.writeValueAsBytes(new UploadManifest(name, files));
+        byte[] data = crypto.encrypt(keySalt, iv, manifest, UploadCrypto.createAad());
+        UploadSessionState state = service.create(keySalt, new EncryptedPayload(iv, data));
+        keySalts.put(state.session().id(), keySalt);
+        return state;
     }
 
-    private void sendAll(UploadSessionState state, Map<String, byte[]> files, boolean reverse) {
+    private EncryptedChunk chunk(UUID id, int fileIndex, int chunkIndex, byte[] content) {
+        byte[] iv = randomBytes(UploadCrypto.IV_LENGTH);
+        byte[] data = crypto.encrypt(keySalts.get(id), iv, content, UploadCrypto.chunkAad(id, fileIndex, chunkIndex));
+        return new EncryptedChunk(fileIndex, chunkIndex, new EncryptedPayload(iv, data));
+    }
+
+    private void put(UUID id, int fileIndex, int chunkIndex, byte[] content) {
+        service.putChunk(id, chunk(id, fileIndex, chunkIndex, content));
+    }
+
+    private EncryptedPayload proof(UUID id, String action) {
+        byte[] iv = randomBytes(UploadCrypto.IV_LENGTH);
+        return new EncryptedPayload(iv, crypto.encrypt(keySalts.get(id), iv, new byte[0], UploadCrypto.actionAad(action, id)));
+    }
+
+    private StoredFile complete(UUID id) {
+        return service.complete(id, proof(id, "complete"));
+    }
+
+    private void cancel(UUID id) {
+        service.cancel(id, proof(id, "cancel"));
+    }
+
+    private void sendAllOneByOne(UploadSessionState state, Map<String, byte[]> files, boolean reverse) {
         List<byte[]> contents = List.copyOf(files.values());
         List<UploadSessionFile> sessionFiles = new ArrayList<>(state.files());
         if (reverse) {
@@ -377,7 +526,7 @@ class UploadSessionServiceImplTest {
         for (UploadSessionFile file : sessionFiles) {
             for (int i = 0; i < file.chunkCount(); i++) {
                 int chunk = reverse ? file.chunkCount() - 1 - i : i;
-                service.putChunk(state.session().id(), file.index(), chunk, b64(slice(contents.get(file.index()), chunk)));
+                put(state.session().id(), file.index(), chunk, slice(contents.get(file.index()), chunk));
             }
         }
     }
@@ -388,17 +537,32 @@ class UploadSessionServiceImplTest {
         return contentStore.resolve(captor.getValue().getStoragePath());
     }
 
-    private static Map<String, byte[]> unzip(Path archive) throws Exception {
+    private static Map<String, byte[]> untar(Path archive) throws Exception {
         Map<String, byte[]> entries = new LinkedHashMap<>();
         try (InputStream in = Files.newInputStream(archive);
-             ZipInputStream zip = new ZipInputStream(in, StandardCharsets.UTF_8)) {
-            for (ZipEntry entry = zip.getNextEntry(); entry != null; entry = zip.getNextEntry()) {
+             InputStream zstd = new ZstdJavaInputStream(in);
+             TarArchiveInputStream tar = new TarArchiveInputStream(zstd, StandardCharsets.UTF_8.name())) {
+            for (TarArchiveEntry entry = tar.getNextEntry(); entry != null; entry = tar.getNextEntry()) {
                 ByteArrayOutputStream out = new ByteArrayOutputStream();
-                zip.transferTo(out);
+                tar.transferTo(out);
                 entries.put(entry.getName(), out.toByteArray());
             }
         }
         return entries;
+    }
+
+    private static boolean hasNeutralOwnership(Path archive) throws Exception {
+        try (InputStream in = Files.newInputStream(archive);
+             InputStream zstd = new ZstdJavaInputStream(in);
+             TarArchiveInputStream tar = new TarArchiveInputStream(zstd, StandardCharsets.UTF_8.name())) {
+            for (TarArchiveEntry entry = tar.getNextEntry(); entry != null; entry = tar.getNextEntry()) {
+                if (!entry.getUserName().isEmpty() || !entry.getGroupName().isEmpty()
+                        || entry.getLongUserId() != 0 || entry.getLongGroupId() != 0) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     private static Map<String, byte[]> fileEntries(Map<String, byte[]> entries) {
@@ -408,12 +572,11 @@ class UploadSessionServiceImplTest {
     }
 
     /**
-     * Checks the "language encoding" flag (bit 11) in the first local file header.
+     * Checks the zstd frame magic number 0xFD2FB528 (little-endian).
      */
-    private static boolean hasUtf8Flag(Path archive) throws Exception {
-        byte[] header = Arrays.copyOf(Files.readAllBytes(archive), 8);
-        int flags = (header[6] & 0xFF) | (header[7] & 0xFF) << 8;
-        return (flags & 0x0800) != 0;
+    private static boolean hasZstdMagic(Path archive) throws Exception {
+        byte[] header = Arrays.copyOf(Files.readAllBytes(archive), 4);
+        return Arrays.equals(header, new byte[]{(byte) 0x28, (byte) 0xB5, (byte) 0x2F, (byte) 0xFD});
     }
 
     private static byte[] slice(byte[] content, int chunk) {
@@ -421,11 +584,13 @@ class UploadSessionServiceImplTest {
         return Arrays.copyOfRange(content, from, Math.min(content.length, from + CHUNK_SIZE));
     }
 
-    private static byte[] bytes(String value) {
-        return value.getBytes(StandardCharsets.UTF_8);
+    private byte[] randomBytes(int length) {
+        byte[] value = new byte[length];
+        random.nextBytes(value);
+        return value;
     }
 
-    private static String b64(byte[] value) {
-        return Base64.getEncoder().encodeToString(value);
+    private static byte[] bytes(String value) {
+        return value.getBytes(StandardCharsets.UTF_8);
     }
 }

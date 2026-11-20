@@ -1,12 +1,12 @@
 package io.github.admiralxy.agent.controller.request.file;
 
-import java.util.List;
-
 /**
- * Creates a chunked upload session.
+ * Creates an encrypted chunked upload session.
  *
- * @param name  archive name without extension (the extension is always {@code zip})
- * @param files files to upload, in the order that defines their indexes
+ * @param version encryption scheme version, must be 1
+ * @param keySalt base64 of 16 random bytes; the session key is derived from it
+ * @param iv      base64 of the 12-byte AES-GCM IV
+ * @param data    base64 of the encrypted JSON manifest {@code {"name": ..., "files": [{"path": ..., "size": ...}]}}
  */
-public record CreateUploadRq(String name, List<CreateUploadFileRq> files) {
+public record CreateUploadRq(Integer version, String keySalt, String iv, String data) {
 }

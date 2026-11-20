@@ -57,7 +57,7 @@ class InMemoryUploadSessionStore implements UploadSessionStore {
                 return s;
             }
             touched.set(true);
-            return new UploadSession(s.id(), s.name(), s.chunkSize(), s.status(), s.createdAt(), expiresAt);
+            return s.withStatus(s.status(), expiresAt);
         });
         return touched.get();
     }
@@ -65,7 +65,7 @@ class InMemoryUploadSessionStore implements UploadSessionStore {
     @Override
     public boolean updateStatus(UUID id, UploadSessionStatus status, Instant expiresAt) {
         return sessions.computeIfPresent(id, (key, s) ->
-                new UploadSession(s.id(), s.name(), s.chunkSize(), status, s.createdAt(), expiresAt)) != null;
+                s.withStatus(status, expiresAt)) != null;
     }
 
     @Override

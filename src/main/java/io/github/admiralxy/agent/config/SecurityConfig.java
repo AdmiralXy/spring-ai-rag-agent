@@ -1,6 +1,6 @@
 package io.github.admiralxy.agent.config;
 
-import org.springframework.beans.factory.annotation.Value;
+import io.github.admiralxy.agent.config.properties.AdminProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -32,12 +32,9 @@ public class SecurityConfig {
     }
 
     @Bean
-    public UserDetailsService userDetailsService(
-            @Value("${app.security.model-settings.username}") String username,
-            @Value("${app.security.model-settings.password}") String password
-    ) {
-        UserDetails user = User.withUsername(username)
-                .password("{noop}" + password)
+    public UserDetailsService userDetailsService(AdminProperties adminProperties) {
+        UserDetails user = User.withUsername(AdminProperties.USERNAME)
+                .password("{noop}" + adminProperties.getPassword())
                 .roles("SETTINGS_ADMIN")
                 .build();
 

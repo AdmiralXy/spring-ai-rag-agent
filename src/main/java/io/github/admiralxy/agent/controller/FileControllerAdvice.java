@@ -5,11 +5,13 @@ import io.github.admiralxy.agent.exception.LimitExceededException;
 import io.github.admiralxy.agent.exception.RequestTooLargeException;
 import io.github.admiralxy.agent.exception.StoredFileNotFoundException;
 import io.github.admiralxy.agent.exception.UploadConflictException;
+import io.github.admiralxy.agent.exception.UploadDecryptionException;
 import io.github.admiralxy.agent.exception.UploadExpiredException;
 import io.github.admiralxy.agent.exception.UploadNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -58,6 +60,16 @@ public class FileControllerAdvice {
     @ExceptionHandler(RequestTooLargeException.class)
     public ProblemDetail handleRequestTooLarge(RequestTooLargeException e) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.CONTENT_TOO_LARGE, e.getMessage());
+    }
+
+    @ExceptionHandler(UploadDecryptionException.class)
+    public ProblemDetail handleDecryption(UploadDecryptionException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, e.getMessage());
+    }
+
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ProblemDetail handleMissingHeader(MissingRequestHeaderException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Header '" + e.getHeaderName() + "' is required");
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)

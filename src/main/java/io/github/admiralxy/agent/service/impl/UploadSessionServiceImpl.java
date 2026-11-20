@@ -1,5 +1,6 @@
 package io.github.admiralxy.agent.service.impl;
 
+import io.airlift.compress.v3.zstd.ZstdJavaOutputStream;
 import io.github.admiralxy.agent.config.properties.FilesProperties;
 import io.github.admiralxy.agent.domain.StoredFile;
 import io.github.admiralxy.agent.domain.UploadSession;
@@ -12,17 +13,24 @@ import io.github.admiralxy.agent.exception.UploadConflictException;
 import io.github.admiralxy.agent.exception.UploadExpiredException;
 import io.github.admiralxy.agent.exception.UploadNotFoundException;
 import io.github.admiralxy.agent.repository.UploadSessionStore;
+import io.github.admiralxy.agent.service.EncryptedChunk;
+import io.github.admiralxy.agent.service.EncryptedPayload;
 import io.github.admiralxy.agent.service.FileStorageService;
 import io.github.admiralxy.agent.service.UploadFileSpec;
+import io.github.admiralxy.agent.service.UploadManifest;
 import io.github.admiralxy.agent.service.UploadSessionService;
-import io.github.admiralxy.agent.service.file.Base64Content;
 import io.github.admiralxy.agent.service.file.FileNameRules;
 import io.github.admiralxy.agent.service.file.UploadChunkStore;
+import io.github.admiralxy.agent.service.file.UploadCrypto;
 import io.github.admiralxy.agent.service.file.UploadPathRules;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
+import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.io.BufferedOutputStream;
 import java.io.IOException;
@@ -36,9 +44,12 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.UUID;
@@ -46,17 +57,19 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.BooleanSupplier;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipOutputStream;
+import java.util.function.IntFunction;
 
 /**
- * Chunked folder uploads.
+ * Encrypted chunked folder uploads.
  *
  * <p>Concurrency: each session is guarded by a read/write lock. Chunk uploads take the read lock only to
- * re-check the session and atomically publish an already written chunk, so they run in parallel.
- * {@code complete}, {@code cancel} and cleanup take the write lock, so they never interleave with a chunk
+ * re-check the session and atomically publish already decrypted and written chunks, so they run in parallel.
+ * {@code complete}, {@code cancel} and cleanup take the write lock, so they never interleave with chunks
  * being published. Chunks live on local disk, so the application is expected to run as a single instance
  * (or with sticky routing by upload id).
+ *
+ * <p>Confidentiality: file names and paths only travel encrypted. Responses and error messages refer to
+ * files by index.
  */
 @Slf4j
 @Service
@@ -64,36 +77,47 @@ public class UploadSessionServiceImpl implements UploadSessionService {
 
     private static final int LOCK_STRIPES = 64;
     private static final int CLEANUP_BATCH_SIZE = 100;
-    private static final int ZIP_BUFFER_SIZE = 64 * 1024;
+    private static final int ARCHIVE_BUFFER_SIZE = 64 * 1024;
+    private static final String ACTION_COMPLETE = "complete";
+    private static final String ACTION_CANCEL = "cancel";
 
     private final UploadSessionStore store;
     private final UploadChunkStore chunkStore;
+    private final UploadCrypto crypto;
     private final FileStorageService fileStorageService;
+    private final JsonMapper jsonMapper;
     private final TransactionTemplate transactionTemplate;
     private final Clock clock;
     private final long chunkSize;
     private final long maxTotalSize;
     private final int maxFiles;
+    private final int maxBatchChunks;
     private final Duration ttl;
     private final ReadWriteLock[] locks = new ReadWriteLock[LOCK_STRIPES];
 
+    @SuppressWarnings("checkstyle:ParameterNumber")
     public UploadSessionServiceImpl(
             UploadSessionStore store,
             UploadChunkStore chunkStore,
+            UploadCrypto crypto,
             FileStorageService fileStorageService,
+            JsonMapper jsonMapper,
             PlatformTransactionManager transactionManager,
             Clock clock,
             FilesProperties properties
     ) {
         this.store = store;
         this.chunkStore = chunkStore;
+        this.crypto = crypto;
         this.fileStorageService = fileStorageService;
+        this.jsonMapper = jsonMapper;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.clock = clock;
         FilesProperties.Uploads uploads = properties.getUploads();
         this.chunkSize = uploads.getChunkSize().toBytes();
         this.maxTotalSize = uploads.getMaxTotalSize().toBytes();
         this.maxFiles = uploads.getMaxFiles();
+        this.maxBatchChunks = uploads.getMaxBatchChunks();
         this.ttl = uploads.getTtl();
         for (int i = 0; i < LOCK_STRIPES; i++) {
             locks[i] = new ReentrantReadWriteLock();
@@ -101,8 +125,20 @@ public class UploadSessionServiceImpl implements UploadSessionService {
     }
 
     @Override
-    public UploadSessionState create(String name, List<UploadFileSpec> specs) {
-        String archiveName = FileNameRules.normalizeName(name);
+    public UploadSessionState create(byte[] keySalt, EncryptedPayload encryptedManifest) {
+        byte[] plaintext = crypto.decrypt(keySalt, encryptedManifest.iv(), encryptedManifest.data(), UploadCrypto.createAad());
+        UploadManifest manifest;
+        try {
+            manifest = jsonMapper.readValue(plaintext, UploadManifest.class);
+        } catch (JacksonException e) {
+            throw new InvalidFileException("Decrypted upload manifest is not valid JSON");
+        }
+        if (manifest == null) {
+            throw new InvalidFileException("Decrypted upload manifest is empty");
+        }
+
+        String archiveName = FileNameRules.normalizeName(manifest.name());
+        List<UploadFileSpec> specs = manifest.files();
         if (specs == null || specs.isEmpty()) {
             throw new InvalidFileException("Field 'files' must not be empty");
         }
@@ -135,48 +171,101 @@ public class UploadSessionServiceImpl implements UploadSessionService {
 
         Instant now = clock.instant();
         UploadSession session = new UploadSession(
-                UUID.randomUUID(), archiveName, chunkSize, UploadSessionStatus.ACTIVE, now, now.plus(ttl));
+                UUID.randomUUID(), archiveName, chunkSize, UploadSessionStatus.ACTIVE, now, now.plus(ttl), keySalt.clone());
         store.create(session, files);
         return new UploadSessionState(session, files, Map.of());
     }
 
     @Override
-    public void putChunk(UUID uploadId, int fileIndex, int chunkIndex, String base64Content) {
-        String payload = Base64Content.payload(base64Content);
-        UploadSession session = requireActive(uploadId, clock.instant());
-        UploadSessionFile file = store.findFile(uploadId, fileIndex)
-                .orElseThrow(() -> new UploadNotFoundException("File index " + fileIndex + " not found in upload " + uploadId));
-        if (chunkIndex < 0 || chunkIndex >= file.chunkCount()) {
-            throw new UploadNotFoundException("Chunk index " + chunkIndex + " not found: file " + fileIndex
-                    + " has " + file.chunkCount() + " chunk(s)");
-        }
+    public void putChunk(UUID uploadId, EncryptedChunk chunk) {
+        storeChunks(uploadId, List.of(chunk), false);
+    }
 
-        long expected = expectedChunkSize(session, file, chunkIndex);
-        if (Base64Content.estimateDecodedSize(payload) > expected + 2) {
-            throw chunkSizeMismatch(file, chunkIndex, expected, Base64Content.estimateDecodedSize(payload));
+    @Override
+    public void putChunks(UUID uploadId, List<EncryptedChunk> chunks) {
+        if (chunks == null || chunks.isEmpty()) {
+            throw new InvalidFileException("Field 'chunks' must not be empty");
         }
-        byte[] content = Base64Content.decode(payload);
-        if (content.length != expected) {
-            throw chunkSizeMismatch(file, chunkIndex, expected, content.length);
+        if (chunks.size() > maxBatchChunks) {
+            throw new LimitExceededException("Batch contains " + chunks.size() + " chunks, the maximum is " + maxBatchChunks);
+        }
+        storeChunks(uploadId, chunks, true);
+    }
+
+    private void storeChunks(UUID uploadId, List<EncryptedChunk> chunks, boolean batch) {
+        UploadSession session = store.find(uploadId).orElseThrow(() -> notFound(uploadId));
+        checkActive(session, clock.instant());
+        IntFunction<Optional<UploadSessionFile>> fileLookup = fileLookup(uploadId, batch);
+
+        // Validate and decrypt everything first: a batch is either stored completely or not at all.
+        List<DecryptedChunk> decrypted = new ArrayList<>(chunks.size());
+        Set<Long> seen = new HashSet<>();
+        for (int k = 0; k < chunks.size(); k++) {
+            String prefix = batch ? "chunks[" + k + "]: " : "";
+            EncryptedChunk chunk = chunks.get(k);
+            if (chunk == null) {
+                throw new InvalidFileException(prefix + "chunk is required");
+            }
+            int fileIndex = chunk.fileIndex();
+            int chunkIndex = chunk.chunkIndex();
+            UploadSessionFile file = fileLookup.apply(fileIndex).orElseThrow(() ->
+                    new UploadNotFoundException(prefix + "File index " + fileIndex + " not found in upload " + uploadId));
+            if (chunkIndex < 0 || chunkIndex >= file.chunkCount()) {
+                throw new UploadNotFoundException(prefix + "Chunk index " + chunkIndex + " not found: file " + fileIndex
+                        + " has " + file.chunkCount() + " chunk(s)");
+            }
+            if (!seen.add(((long) fileIndex << 32) | chunkIndex)) {
+                throw new InvalidFileException(prefix + "Chunk " + chunkIndex + " of file " + fileIndex + " is repeated in the batch");
+            }
+            long expected = expectedChunkSize(session, file, chunkIndex);
+            int actual = chunk.payload().data().length - UploadCrypto.TAG_LENGTH;
+            if (actual != expected) {
+                throw new InvalidFileException(prefix + "Chunk " + chunkIndex + " of file " + fileIndex + " must be " + expected
+                        + " bytes before encryption, got " + Math.max(actual, 0));
+            }
+            byte[] content = crypto.decrypt(session.keySalt(), chunk.payload().iv(), chunk.payload().data(),
+                    UploadCrypto.chunkAad(uploadId, fileIndex, chunkIndex));
+            decrypted.add(new DecryptedChunk(fileIndex, chunkIndex, content));
         }
 
         // Write outside the lock; only the atomic publish is serialized against complete/cancel/cleanup.
-        Path tmp = io(() -> chunkStore.writeTemp(uploadId, fileIndex, chunkIndex, content));
-        Lock lock = lockFor(uploadId).readLock();
-        lock.lock();
+        List<Path> temps = new ArrayList<>(decrypted.size());
         try {
-            Instant now = clock.instant();
-            if (!store.touch(uploadId, now, now.plus(ttl))) {
-                throw unavailable(uploadId, now);
+            for (DecryptedChunk chunk : decrypted) {
+                temps.add(io(() -> chunkStore.writeTemp(uploadId, chunk.fileIndex(), chunk.chunkIndex(), chunk.content())));
             }
-            io(() -> {
-                chunkStore.commit(tmp, uploadId, fileIndex, chunkIndex);
-                return null;
-            });
+            Lock lock = lockFor(uploadId).readLock();
+            lock.lock();
+            try {
+                Instant now = clock.instant();
+                if (!store.touch(uploadId, now, now.plus(ttl))) {
+                    throw unavailable(uploadId, now);
+                }
+                for (int i = 0; i < decrypted.size(); i++) {
+                    DecryptedChunk chunk = decrypted.get(i);
+                    Path tmp = temps.get(i);
+                    io(() -> {
+                        chunkStore.commit(tmp, uploadId, chunk.fileIndex(), chunk.chunkIndex());
+                        return null;
+                    });
+                }
+            } finally {
+                lock.unlock();
+            }
         } finally {
-            lock.unlock();
-            chunkStore.deleteQuietly(tmp);
+            temps.forEach(chunkStore::deleteQuietly);
         }
+    }
+
+    private IntFunction<Optional<UploadSessionFile>> fileLookup(UUID uploadId, boolean batch) {
+        if (!batch) {
+            return index -> store.findFile(uploadId, index);
+        }
+        Map<Integer, UploadSessionFile> files = new HashMap<>();
+        for (UploadSessionFile file : store.findFiles(uploadId)) {
+            files.put(file.index(), file);
+        }
+        return index -> Optional.ofNullable(files.get(index));
     }
 
     @Override
@@ -191,14 +280,16 @@ public class UploadSessionServiceImpl implements UploadSessionService {
     }
 
     @Override
-    public StoredFile complete(UUID uploadId) {
+    public StoredFile complete(UUID uploadId, EncryptedPayload proof) {
         UploadSession session;
         List<UploadSessionFile> files;
         Lock writeLock = lockFor(uploadId).writeLock();
         writeLock.lock();
         try {
             Instant now = clock.instant();
-            session = requireActive(uploadId, now);
+            session = store.find(uploadId).orElseThrow(() -> notFound(uploadId));
+            verifyProof(session, proof, ACTION_COMPLETE);
+            checkActive(session, now);
             files = store.findFiles(uploadId);
             checkAllChunksReceived(files, io(() -> chunkStore.listReceived(uploadId)));
             store.updateStatus(uploadId, UploadSessionStatus.COMPLETING, now.plus(ttl));
@@ -231,10 +322,12 @@ public class UploadSessionServiceImpl implements UploadSessionService {
     }
 
     @Override
-    public void cancel(UUID uploadId) {
+    public void cancel(UUID uploadId, EncryptedPayload proof) {
         Lock writeLock = lockFor(uploadId).writeLock();
         writeLock.lock();
         try {
+            UploadSession session = store.find(uploadId).orElseThrow(() -> notFound(uploadId));
+            verifyProof(session, proof, ACTION_CANCEL);
             if (!store.delete(uploadId)) {
                 throw notFound(uploadId);
             }
@@ -285,20 +378,32 @@ public class UploadSessionServiceImpl implements UploadSessionService {
         return deleted;
     }
 
-    private UploadSession requireActive(UUID uploadId, Instant now) {
-        UploadSession session = store.find(uploadId).orElseThrow(() -> notFound(uploadId));
+    private void verifyProof(UploadSession session, EncryptedPayload proof, String action) {
+        if (proof == null) {
+            throw new InvalidFileException("Upload proof is required");
+        }
+        byte[] plaintext = crypto.decrypt(session.keySalt(), proof.iv(), proof.data(), UploadCrypto.actionAad(action, session.id()));
+        if (plaintext.length != 0) {
+            throw new InvalidFileException("Upload proof must encrypt an empty message");
+        }
+    }
+
+    private static void checkActive(UploadSession session, Instant now) {
         if (session.isExpired(now)) {
-            throw new UploadExpiredException(uploadId);
+            throw new UploadExpiredException(session.id());
         }
         if (session.status() == UploadSessionStatus.COMPLETING) {
-            throw new UploadConflictException("Upload " + uploadId + " is being completed");
+            throw new UploadConflictException("Upload " + session.id() + " is being completed");
         }
-        return session;
     }
 
     private RuntimeException unavailable(UUID uploadId, Instant now) {
+        Optional<UploadSession> session = store.find(uploadId);
+        if (session.isEmpty()) {
+            return notFound(uploadId);
+        }
         try {
-            requireActive(uploadId, now);
+            checkActive(session.get(), now);
         } catch (RuntimeException e) {
             return e;
         }
@@ -307,40 +412,51 @@ public class UploadSessionServiceImpl implements UploadSessionService {
 
     private void checkAllChunksReceived(List<UploadSessionFile> files, Map<Integer, SortedSet<Integer>> received) {
         long missing = 0;
-        String firstMissingPath = null;
+        int firstMissingFile = -1;
         int firstMissingChunk = -1;
         for (UploadSessionFile file : files) {
             Set<Integer> got = received.getOrDefault(file.index(), Collections.emptySortedSet());
             for (int chunk = 0; chunk < file.chunkCount(); chunk++) {
                 if (!got.contains(chunk)) {
                     missing++;
-                    if (firstMissingPath == null) {
-                        firstMissingPath = file.path();
+                    if (firstMissingFile < 0) {
+                        firstMissingFile = file.index();
                         firstMissingChunk = chunk;
                     }
                 }
             }
         }
         if (missing > 0) {
-            throw new UploadConflictException(missing + " chunk(s) are missing; first missing: '" + firstMissingPath
-                    + "' chunk " + firstMissingChunk);
+            throw new UploadConflictException(missing + " chunk(s) are missing; first missing: file " + firstMissingFile
+                    + " chunk " + firstMissingChunk);
         }
     }
 
+    /**
+     * Streams chunks into a {@code .tar.zst} archive (POSIX tar with PAX headers for long and non-ASCII names,
+     * compressed with pure-Java zstd). Nothing is held in memory besides stream buffers.
+     */
     private Path buildArchive(UUID uploadId, List<UploadSessionFile> files) throws IOException {
         Path archive = chunkStore.archiveTempPath(uploadId);
-        try (OutputStream out = new BufferedOutputStream(Files.newOutputStream(archive), ZIP_BUFFER_SIZE);
-             ZipOutputStream zip = new ZipOutputStream(out, StandardCharsets.UTF_8)) {
-            // UTF-8 charset makes ZipOutputStream set the language encoding flag (bit 11) on every entry.
+        Date modified = Date.from(clock.instant());
+        try (OutputStream out = new BufferedOutputStream(Files.newOutputStream(archive), ARCHIVE_BUFFER_SIZE);
+             OutputStream zstd = new ZstdJavaOutputStream(out);
+             TarArchiveOutputStream tar = new TarArchiveOutputStream(zstd, StandardCharsets.UTF_8.name())) {
+            tar.setLongFileMode(TarArchiveOutputStream.LONGFILE_POSIX);
+            tar.setBigNumberMode(TarArchiveOutputStream.BIGNUMBER_POSIX);
+            tar.setAddPaxHeadersForNonAsciiNames(true);
             Set<String> directories = new HashSet<>();
             for (UploadSessionFile file : files) {
-                addParentDirectories(zip, file.path(), directories);
-                zip.putNextEntry(new ZipEntry(file.path()));
+                addParentDirectories(tar, file.path(), directories, modified);
+                TarArchiveEntry entry = tarEntry(file.path(), modified);
+                entry.setSize(file.size());
+                tar.putArchiveEntry(entry);
                 for (int chunk = 0; chunk < file.chunkCount(); chunk++) {
-                    Files.copy(chunkStore.chunkPath(uploadId, file.index(), chunk), zip);
+                    Files.copy(chunkStore.chunkPath(uploadId, file.index(), chunk), tar);
                 }
-                zip.closeEntry();
+                tar.closeArchiveEntry();
             }
+            tar.finish();
         } catch (IOException | RuntimeException e) {
             chunkStore.deleteQuietly(archive);
             throw e;
@@ -348,14 +464,28 @@ public class UploadSessionServiceImpl implements UploadSessionService {
         return archive;
     }
 
-    private static void addParentDirectories(ZipOutputStream zip, String path, Set<String> directories) throws IOException {
+    private static void addParentDirectories(TarArchiveOutputStream tar, String path, Set<String> directories, Date modified)
+            throws IOException {
         for (int slash = path.indexOf('/'); slash > 0; slash = path.indexOf('/', slash + 1)) {
             String directory = path.substring(0, slash + 1);
             if (directories.add(directory)) {
-                zip.putNextEntry(new ZipEntry(directory));
-                zip.closeEntry();
+                tar.putArchiveEntry(tarEntry(directory, modified));
+                tar.closeArchiveEntry();
             }
         }
+    }
+
+    /**
+     * Entry with neutral ownership: TarArchiveEntry would otherwise record the server's OS user name.
+     */
+    private static TarArchiveEntry tarEntry(String name, Date modified) {
+        TarArchiveEntry entry = new TarArchiveEntry(name);
+        entry.setUserName("");
+        entry.setGroupName("");
+        entry.setUserId(0);
+        entry.setGroupId(0);
+        entry.setModTime(modified);
+        return entry;
     }
 
     private void revertToActive(UUID uploadId) {
@@ -379,11 +509,6 @@ public class UploadSessionServiceImpl implements UploadSessionService {
         return file.size() - session.chunkSize() * (file.chunkCount() - 1);
     }
 
-    private static InvalidFileException chunkSizeMismatch(UploadSessionFile file, int chunkIndex, long expected, long actual) {
-        return new InvalidFileException("Chunk " + chunkIndex + " of '" + file.path() + "' must be " + expected
-                + " bytes, got " + actual);
-    }
-
     private static UploadNotFoundException notFound(UUID uploadId) {
         return new UploadNotFoundException("Upload session not found: " + uploadId);
     }
@@ -403,5 +528,8 @@ public class UploadSessionServiceImpl implements UploadSessionService {
     @FunctionalInterface
     private interface IoSupplier<T> {
         T get() throws IOException;
+    }
+
+    private record DecryptedChunk(int fileIndex, int chunkIndex, byte[] content) {
     }
 }
