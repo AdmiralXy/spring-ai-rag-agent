@@ -5,6 +5,7 @@ import java.util.UUID;
 
 public record UploadSession(
         UUID id,
+        UUID userId,
         String name,
         long chunkSize,
         UploadSessionStatus status,
@@ -17,6 +18,6 @@ public record UploadSession(
     }
 
     public UploadSession withStatus(UploadSessionStatus newStatus, Instant newExpiresAt) {
-        return new UploadSession(id, name, chunkSize, newStatus, createdAt, newExpiresAt, keySalt);
+        return new UploadSession(id, userId, name, chunkSize, newStatus, createdAt, newExpiresAt, keySalt);
     }
 }

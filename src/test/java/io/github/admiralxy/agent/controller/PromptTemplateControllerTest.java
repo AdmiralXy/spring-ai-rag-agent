@@ -6,6 +6,7 @@ import io.github.admiralxy.agent.controller.response.prompt.CreatePromptTemplate
 import io.github.admiralxy.agent.controller.response.prompt.GetPromptTemplatesRs;
 import io.github.admiralxy.agent.controller.response.prompt.UpdatePromptTemplateRs;
 import io.github.admiralxy.agent.domain.PromptTemplate;
+import io.github.admiralxy.agent.security.AuthUser;
 import io.github.admiralxy.agent.service.prompt.PromptTemplateService;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -18,15 +19,18 @@ import static org.mockito.Mockito.verify;
 
 class PromptTemplateControllerTest {
 
+    private static final UUID USER_ID = UUID.randomUUID();
+    private static final AuthUser USER = new AuthUser(USER_ID, "user@example.com", "hash");
+
     private final PromptTemplateService promptTemplateService = Mockito.mock(PromptTemplateService.class);
     private final PromptTemplateController promptTemplateController = new PromptTemplateController(promptTemplateService);
 
     @Test
     void getAllReturnsTemplates() {
         PromptTemplate template = new PromptTemplate(UUID.randomUUID(), "Default", "You are assistant");
-        Mockito.when(promptTemplateService.getAll()).thenReturn(List.of(template));
+        Mockito.when(promptTemplateService.getAll(USER_ID)).thenReturn(List.of(template));
 
-        GetPromptTemplatesRs rs = promptTemplateController.getAll();
+        GetPromptTemplatesRs rs = promptTemplateController.getAll(USER);
 
         assertEquals(1, rs.templates().size());
         assertEquals("Default", rs.templates().getFirst().name());
@@ -37,10 +41,10 @@ class PromptTemplateControllerTest {
     void createReturnsCreatedTemplate() {
         UUID id = UUID.randomUUID();
         CreatePromptTemplateRq rq = new CreatePromptTemplateRq("Code review", "Review this patch");
-        Mockito.when(promptTemplateService.create(rq.name(), rq.content()))
+        Mockito.when(promptTemplateService.create(USER_ID, rq.name(), rq.content()))
                 .thenReturn(new PromptTemplate(id, rq.name(), rq.content()));
 
-        CreatePromptTemplateRs rs = promptTemplateController.create(rq);
+        CreatePromptTemplateRs rs = promptTemplateController.create(USER, rq);
 
         assertEquals(id, rs.id());
         assertEquals("Code review", rs.name());
@@ -51,10 +55,10 @@ class PromptTemplateControllerTest {
     void updateReturnsUpdatedTemplate() {
         UUID id = UUID.randomUUID();
         UpdatePromptTemplateRq rq = new UpdatePromptTemplateRq("Doc helper", "Summarize docs");
-        Mockito.when(promptTemplateService.update(id, rq.name(), rq.content()))
+        Mockito.when(promptTemplateService.update(USER_ID, id, rq.name(), rq.content()))
                 .thenReturn(new PromptTemplate(id, rq.name(), rq.content()));
 
-        UpdatePromptTemplateRs rs = promptTemplateController.update(id, rq);
+        UpdatePromptTemplateRs rs = promptTemplateController.update(USER, id, rq);
 
         assertEquals(id, rs.id());
         assertEquals("Doc helper", rs.name());
@@ -65,8 +69,8 @@ class PromptTemplateControllerTest {
     void deleteDelegatesToService() {
         UUID id = UUID.randomUUID();
 
-        promptTemplateController.delete(id);
+        promptTemplateController.delete(USER, id);
 
-        verify(promptTemplateService).delete(id);
+        verify(promptTemplateService).delete(USER_ID, id);
     }
 }

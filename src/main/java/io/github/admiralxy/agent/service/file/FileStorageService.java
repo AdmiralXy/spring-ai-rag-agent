@@ -9,13 +9,13 @@ import java.util.UUID;
 
 public interface FileStorageService {
 
-    StoredFile upload(String name, String extension, String base64Content);
+    StoredFile upload(UUID userId, String name, String extension, String base64Content);
 
-    StoredFile storeArchive(String name, Path archive);
+    StoredFile storeArchive(UUID userId, String name, Path archive);
 
-    Page<StoredFile> getAll(int page, int size);
+    Page<StoredFile> getAll(UUID userId, int page, int size);
 
-    StoredFileContent download(UUID id);
+    StoredFileContent download(UUID userId, UUID id);
 
-    void delete(UUID id);
+    void delete(UUID userId, UUID id);
 }

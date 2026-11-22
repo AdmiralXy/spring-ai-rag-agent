@@ -5,8 +5,10 @@ import io.github.admiralxy.agent.controller.request.prompt.UpdatePromptTemplateR
 import io.github.admiralxy.agent.controller.response.prompt.CreatePromptTemplateRs;
 import io.github.admiralxy.agent.controller.response.prompt.GetPromptTemplatesRs;
 import io.github.admiralxy.agent.controller.response.prompt.UpdatePromptTemplateRs;
+import io.github.admiralxy.agent.security.AuthUser;
 import io.github.admiralxy.agent.service.prompt.PromptTemplateService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -26,24 +28,25 @@ public class PromptTemplateController {
     private final PromptTemplateService promptTemplateService;
 
     @GetMapping
-    public GetPromptTemplatesRs getAll() {
-        return new GetPromptTemplatesRs(promptTemplateService.getAll());
+    public GetPromptTemplatesRs getAll(@AuthenticationPrincipal AuthUser user) {
+        return new GetPromptTemplatesRs(promptTemplateService.getAll(user.id()));
     }
 
     @PostMapping
-    public CreatePromptTemplateRs create(@RequestBody CreatePromptTemplateRq rq) {
-        var template = promptTemplateService.create(rq.name(), rq.content());
+    public CreatePromptTemplateRs create(@AuthenticationPrincipal AuthUser user, @RequestBody CreatePromptTemplateRq rq) {
+        var template = promptTemplateService.create(user.id(), rq.name(), rq.content());
         return new CreatePromptTemplateRs(template.id(), template.name(), template.content());
     }
 
     @PatchMapping("/{id}")
-    public UpdatePromptTemplateRs update(@PathVariable UUID id, @RequestBody UpdatePromptTemplateRq rq) {
-        var template = promptTemplateService.update(id, rq.name(), rq.content());
+    public UpdatePromptTemplateRs update(@AuthenticationPrincipal AuthUser user, @PathVariable UUID id,
+                                         @RequestBody UpdatePromptTemplateRq rq) {
+        var template = promptTemplateService.update(user.id(), id, rq.name(), rq.content());
         return new UpdatePromptTemplateRs(template.id(), template.name(), template.content());
     }
 
     @DeleteMapping("/{id}")
-    public void delete(@PathVariable UUID id) {
-        promptTemplateService.delete(id);
+    public void delete(@AuthenticationPrincipal AuthUser user, @PathVariable UUID id) {
+        promptTemplateService.delete(user.id(), id);
     }
 }

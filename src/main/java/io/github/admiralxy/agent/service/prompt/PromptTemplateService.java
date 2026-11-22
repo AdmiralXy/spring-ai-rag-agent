@@ -7,11 +7,11 @@ import java.util.UUID;
 
 public interface PromptTemplateService {
 
-    List<PromptTemplate> getAll();
+    List<PromptTemplate> getAll(UUID userId);
 
-    PromptTemplate create(String name, String content);
+    PromptTemplate create(UUID userId, String name, String content);
 
-    PromptTemplate update(UUID id, String name, String content);
+    PromptTemplate update(UUID userId, UUID id, String name, String content);
 
-    void delete(UUID id);
+    void delete(UUID userId, UUID id);
 }

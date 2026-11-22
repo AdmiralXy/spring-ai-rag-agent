@@ -37,7 +37,6 @@ dependencies {
     implementation(platform("org.springframework.ai:spring-ai-bom:${property("springAiVersion")}"))
     implementation("org.springframework.ai:spring-ai-starter-model-openai")
     implementation("org.springframework.ai:spring-ai-anthropic")
-    implementation("org.springframework.ai:spring-ai-starter-vector-store-pgvector")
     implementation("org.springframework.ai:spring-ai-session-jdbc")
     implementation("org.springframework.ai:spring-ai-session-advisor")
     implementation("com.knuddels:jtokkit:1.1.0")

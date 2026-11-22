@@ -13,6 +13,7 @@ import java.io.IOException;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -39,12 +40,14 @@ class RagControllerTest {
     }
 
     @Test
-    void subscribeToProgressCompletesWithErrorWhenFluxFails() {
+    void subscribeToProgressSendsReadableErrorEventWhenFluxFails() throws IOException {
         RagController ragController = new RagController(ragService, taskExecutor);
 
         ragController.subscribeToProgress(emitter, Flux.error(new IllegalStateException("boom")));
 
-        verify(emitter).completeWithError(any(IllegalStateException.class));
+        verify(emitter).send(any(SseEmitter.SseEventBuilder.class));
+        verify(emitter).complete();
+        verify(emitter, never()).completeWithError(any());
     }
 
     @Test

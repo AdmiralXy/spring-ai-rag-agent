@@ -12,6 +12,14 @@ databaseChangeLog:
                   constraints:
                     primaryKey: true
               - column:
+                  name: c_user_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_upload_sessions_users
+                    references: t_users(c_id)
+                    deleteCascade: true
+              - column:
                   name: c_name
                   type: text
                   constraints:

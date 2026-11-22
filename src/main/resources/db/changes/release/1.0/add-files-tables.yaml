@@ -12,6 +12,14 @@ databaseChangeLog:
                   constraints:
                     primaryKey: true
               - column:
+                  name: c_user_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_files_users
+                    references: t_users(c_id)
+                    deleteCascade: true
+              - column:
                   name: c_name
                   type: text
                   constraints:
@@ -45,12 +53,13 @@ databaseChangeLog:
                     nullable: false
         - sql:
             sql: >
-              ALTER TABLE t_files ADD CONSTRAINT ck_files_content_location
-              CHECK ((c_content IS NULL) <> (c_storage_path IS NULL))
+              ALTER TABLE t_files ADD CONSTRAINT ck_files_content_location CHECK ((c_content IS NULL) <> (c_storage_path IS NULL))
         - createIndex:
             tableName: t_files
-            indexName: idx_files_created_at
+            indexName: idx_files_user_created_at
             columns:
+              - column:
+                  name: c_user_id
               - column:
                   name: c_created_at
                   descending: true

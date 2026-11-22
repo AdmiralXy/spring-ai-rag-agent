@@ -8,6 +8,7 @@ public record EmbeddingsModelUpdateRq(
         String apiKey,
         String name,
         int dimensions,
-        int maxDocumentTokens
+        int maxDocumentTokens,
+        boolean resetDocuments
 ) {
 }

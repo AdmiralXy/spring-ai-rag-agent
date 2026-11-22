@@ -1,0 +1,92 @@
+databaseChangeLog:
+  - changeSet:
+      id: add-spaces-table
+      author: AdmiralXy
+      changes:
+        - createTable:
+            tableName: t_spaces
+            columns:
+              - column:
+                  name: c_id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: c_user_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_spaces_users
+                    references: t_users(c_id)
+                    deleteCascade: true
+              - column:
+                  name: c_name
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_created_at
+                  type: timestamptz
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - createIndex:
+            tableName: t_spaces
+            indexName: idx_spaces_user
+            columns:
+              - column:
+                  name: c_user_id
+              - column:
+                  name: c_created_at
+                  descending: true
+
+  - changeSet:
+      id: add-documents-table
+      author: AdmiralXy
+      comment: Chunks of the spaces. Vectors of any dimension share one column; searches cast them to the dimension of the user model, matching the partial HNSW index created for it at runtime
+      changes:
+        - createTable:
+            tableName: t_documents
+            columns:
+              - column:
+                  name: c_id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: c_space_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_documents_spaces
+                    references: t_spaces(c_id)
+                    deleteCascade: true
+              - column:
+                  name: c_dimensions
+                  type: int
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_content
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_metadata
+                  type: jsonb
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_embedding
+                  type: vector
+                  constraints:
+                    nullable: false
+        - sql:
+            sql: >
+              ALTER TABLE t_documents ADD CONSTRAINT ck_documents_dimensions CHECK (vector_dims(c_embedding) = c_dimensions)
+        - sql:
+            sql: >
+              CREATE INDEX idx_documents_space_doc ON t_documents (c_space_id, (c_metadata ->> 'doc'))
+        - sql:
+            sql: >
+              CREATE INDEX idx_documents_content_fts ON t_documents USING gin (to_tsvector('simple', c_content))

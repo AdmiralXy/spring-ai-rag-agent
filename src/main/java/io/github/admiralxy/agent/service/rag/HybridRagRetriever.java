@@ -2,10 +2,10 @@ package io.github.admiralxy.agent.service.rag;
 
 import io.github.admiralxy.agent.domain.RagSearchHit;
 import io.github.admiralxy.agent.repository.RagDocumentRepository;
+import io.github.admiralxy.agent.service.model.EmbeddingModelRuntime.Embedder;
 import jakarta.annotation.Nullable;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.stereotype.Component;
 
 import java.util.Collection;
@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -44,17 +45,17 @@ public class HybridRagRetriever {
     );
 
     private final RagDocumentRepository repository;
-    private final EmbeddingModel embeddingModel;
 
-    public List<RagSearchHit> search(List<String> spaceIds, String query, @Nullable String contextualQuery,
-                                     int topK, double keywordWeight) {
+    public List<RagSearchHit> search(Embedder embedder, List<UUID> spaceIds, String query,
+                                     @Nullable String contextualQuery, int topK, double keywordWeight) {
         if (spaceIds.isEmpty() || StringUtils.isBlank(query) || topK <= 0) {
             return List.of();
         }
+        int dimensions = embedder.settings().getDimensions();
         Map<String, Fused> fused = new LinkedHashMap<>();
-        fuse(fused, repository.vectorSearch(spaceIds, embeddingModel.embed(query), topK), VECTOR_WEIGHT);
+        fuse(fused, repository.vectorSearch(spaceIds, dimensions, embedder.embed(query), topK), VECTOR_WEIGHT);
         if (StringUtils.isNotBlank(contextualQuery)) {
-            fuse(fused, repository.vectorSearch(spaceIds, embeddingModel.embed(contextualQuery), topK),
+            fuse(fused, repository.vectorSearch(spaceIds, dimensions, embedder.embed(contextualQuery), topK),
                     CONTEXTUAL_QUERY_WEIGHT);
         }
         String tsQuery = toTsQuery(query);

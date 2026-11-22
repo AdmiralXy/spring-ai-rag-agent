@@ -8,17 +8,17 @@ import java.util.UUID;
 
 public interface UploadSessionService {
 
-    UploadSessionState create(byte[] keySalt, EncryptedPayload manifest);
+    UploadSessionState create(UUID userId, byte[] keySalt, EncryptedPayload manifest);
 
-    void putChunk(UUID uploadId, EncryptedChunk chunk);
+    void putChunk(UUID userId, UUID uploadId, EncryptedChunk chunk);
 
-    void putChunks(UUID uploadId, List<EncryptedChunk> chunks);
+    void putChunks(UUID userId, UUID uploadId, List<EncryptedChunk> chunks);
 
-    UploadSessionState getStatus(UUID uploadId);
+    UploadSessionState getStatus(UUID userId, UUID uploadId);
 
-    StoredFile complete(UUID uploadId, EncryptedPayload proof);
+    StoredFile complete(UUID userId, UUID uploadId, EncryptedPayload proof);
 
-    void cancel(UUID uploadId, EncryptedPayload proof);
+    void cancel(UUID userId, UUID uploadId, EncryptedPayload proof);
 
     int cleanupExpired();
 }

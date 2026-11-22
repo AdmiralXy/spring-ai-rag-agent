@@ -31,6 +31,9 @@ public class ChatEntity {
     @Column(name = "c_id", updatable = false, nullable = false)
     private UUID id;
 
+    @Column(name = "c_user_id", nullable = false, updatable = false)
+    private UUID userId;
+
     @Column(name = "c_title", nullable = false)
     private String title;
 

@@ -10,21 +10,32 @@ import java.util.function.Consumer;
 
 public interface ModelSettingsService {
 
-    List<ChatModelEntity> getChatModels();
+    /**
+     * Models of the user plus the built-in one, by priority.
+     */
+    List<ChatModelEntity> getChatModels(UUID userId);
 
-    ChatModelEntity getChatModel(UUID id);
+    ChatModelEntity getChatModel(UUID userId, UUID id);
 
-    ChatModelEntity createChatModel(Consumer<ChatModelEntity> settings);
+    ChatModelEntity createChatModel(UUID userId, Consumer<ChatModelEntity> settings);
 
-    ChatModelEntity updateChatModel(UUID id, Consumer<ChatModelEntity> settings);
+    ChatModelEntity updateChatModel(UUID userId, UUID id, Consumer<ChatModelEntity> settings);
 
-    void deleteChatModel(UUID id);
+    void deleteChatModel(UUID userId, UUID id);
 
-    EmbeddingModelEntity getEmbeddingModel();
+    EmbeddingModelEntity getEmbeddingModel(UUID userId);
 
-    EmbeddingModelEntity updateEmbeddingModel(Consumer<EmbeddingModelEntity> settings);
+    /**
+     * Saves the embedding model. When the change makes the stored vectors incomparable with new ones (another
+     * model, URL or dimension), the chunks of all spaces of the user are deleted, which the caller has to confirm
+     * with {@code resetDocuments}; the spaces themselves stay.
+     */
+    EmbeddingModelEntity updateEmbeddingModel(UUID userId, Consumer<EmbeddingModelEntity> settings,
+                                              boolean resetDocuments);
 
-    SummarizerModelEntity getSummarizerModel();
+    long countIndexedChunks(UUID userId);
 
-    SummarizerModelEntity updateSummarizerModel(Consumer<SummarizerModelEntity> settings);
+    SummarizerModelEntity getSummarizerModel(UUID userId);
+
+    SummarizerModelEntity updateSummarizerModel(UUID userId, Consumer<SummarizerModelEntity> settings);
 }

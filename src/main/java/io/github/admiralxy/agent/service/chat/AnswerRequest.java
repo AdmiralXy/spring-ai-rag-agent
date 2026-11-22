@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.UUID;
 
 public record AnswerRequest(
+        UUID userId,
         UUID chatId,
         ChatModelEntity model,
         String text,

@@ -22,10 +22,10 @@ public class JdbcUploadSessionStore implements UploadSessionStore {
 
     private static final int INSERT_BATCH_SIZE = 1000;
     private static final String SESSION_COLUMNS =
-            "c_id, c_name, c_chunk_size, c_status, c_created_at, c_expires_at, c_key_salt";
+            "c_id, c_user_id, c_name, c_chunk_size, c_status, c_created_at, c_expires_at, c_key_salt";
     private static final String FILE_COLUMNS = "c_index, c_path, c_size, c_chunk_count";
     private static final String INSERT_SESSION = "insert into t_upload_sessions (" + SESSION_COLUMNS
-            + ") values (?, ?, ?, ?, ?, ?, ?)";
+            + ") values (?, ?, ?, ?, ?, ?, ?, ?)";
     private static final String INSERT_FILE = "insert into t_upload_session_files (c_session_id, " + FILE_COLUMNS
             + ") values (?, ?, ?, ?, ?)";
     private static final String SELECT_SESSION = "select " + SESSION_COLUMNS + " from t_upload_sessions where c_id = ?";
@@ -42,6 +42,7 @@ public class JdbcUploadSessionStore implements UploadSessionStore {
             + " order by c_expires_at limit ?";
     private static final String EXISTS = "select exists(select 1 from t_upload_sessions where c_id = ?)";
     private static final String ID = "c_id";
+    private static final String USER_ID = "c_user_id";
     private static final String NAME = "c_name";
     private static final String CHUNK_SIZE = "c_chunk_size";
     private static final String STATUS = "c_status";
@@ -55,6 +56,7 @@ public class JdbcUploadSessionStore implements UploadSessionStore {
 
     private static final RowMapper<UploadSession> SESSION_MAPPER = (rs, rowNum) -> new UploadSession(
             rs.getObject(ID, UUID.class),
+            rs.getObject(USER_ID, UUID.class),
             rs.getString(NAME),
             rs.getLong(CHUNK_SIZE),
             UploadSessionStatus.valueOf(rs.getString(STATUS)),
@@ -74,7 +76,8 @@ public class JdbcUploadSessionStore implements UploadSessionStore {
     @Override
     @Transactional
     public void create(UploadSession session, List<UploadSessionFile> files) {
-        jdbcTemplate.update(INSERT_SESSION, session.id(), session.name(), session.chunkSize(), session.status().name(),
+        jdbcTemplate.update(INSERT_SESSION, session.id(), session.userId(), session.name(), session.chunkSize(),
+                session.status().name(),
                 ts(session.createdAt()), ts(session.expiresAt()), session.keySalt());
         jdbcTemplate.batchUpdate(INSERT_FILE, files, INSERT_BATCH_SIZE, (ps, file) -> {
             ps.setObject(1, session.id());

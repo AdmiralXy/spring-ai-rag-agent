@@ -27,6 +27,12 @@ public class ChatModelEntity {
     @Column(name = "c_id", updatable = false, nullable = false)
     private UUID id;
 
+    @Column(name = "c_user_id", updatable = false)
+    private UUID userId;
+
+    @Column(name = "c_builtin", nullable = false, updatable = false)
+    private boolean builtin;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "c_provider", nullable = false)
     private ChatModelProvider provider;

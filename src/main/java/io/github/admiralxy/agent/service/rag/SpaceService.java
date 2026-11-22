@@ -7,9 +7,9 @@ import java.util.UUID;
 
 public interface SpaceService {
 
-    Page<Space> getAll(int size);
+    Page<Space> getAll(UUID userId, int size);
 
-    Space create(String name);
+    Space create(UUID userId, String name);
 
-    void delete(UUID id);
+    void delete(UUID userId, UUID id);
 }

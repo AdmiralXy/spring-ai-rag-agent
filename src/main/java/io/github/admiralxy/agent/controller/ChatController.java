@@ -10,6 +10,7 @@ import io.github.admiralxy.agent.controller.response.chat.GetChatsRs;
 import io.github.admiralxy.agent.controller.response.chat.StopChatRs;
 import io.github.admiralxy.agent.controller.response.chat.UpdateModelRs;
 import io.github.admiralxy.agent.domain.Chat;
+import io.github.admiralxy.agent.security.AuthUser;
 import io.github.admiralxy.agent.service.agent.AgentRunnerClient;
 import io.github.admiralxy.agent.service.chat.ChatService;
 import io.github.admiralxy.agent.service.chat.SendMessageCommand;
@@ -20,6 +21,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.http.codec.ServerSentEvent;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -52,60 +54,66 @@ public class ChatController {
     private final AgentRunnerClient agentRunnerClient;
 
     @GetMapping
-    public GetChatsRs getAll(@RequestParam(defaultValue = "0") int page,
+    public GetChatsRs getAll(@AuthenticationPrincipal AuthUser user, @RequestParam(defaultValue = "0") int page,
                              @RequestParam(defaultValue = "10") int size,
                              @RequestParam(required = false) String q) {
-        return new GetChatsRs(chatService.getAll(page, size, q));
+        return new GetChatsRs(chatService.getAll(user.id(), page, size, q));
     }
 
     @PostMapping
-    public CreateChatRs create(@RequestBody CreateChatRq rq) {
-        Chat chat = chatService.create(rq.ragSpaces() == null ? List.of() : rq.ragSpaces());
+    public CreateChatRs create(@AuthenticationPrincipal AuthUser user, @RequestBody CreateChatRq rq) {
+        Chat chat = chatService.create(user.id(), rq.ragSpaces() == null ? List.of() : rq.ragSpaces());
         return new CreateChatRs(chat.id(), chat.title());
     }
 
     @PostMapping(value = "/{id}/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<ServerSentEvent<String>> stream(@PathVariable UUID id, @RequestBody StreamChatRq rq) {
-        return chatService.send(id, new SendMessageCommand(rq.modelId(), rq.text(), rq.thinking(), rq.images()));
+    public Flux<ServerSentEvent<String>> stream(@AuthenticationPrincipal AuthUser user, @PathVariable UUID id,
+                                                @RequestBody StreamChatRq rq) {
+        return chatService.send(user.id(), id,
+                new SendMessageCommand(rq.modelId(), rq.text(), rq.thinking(), rq.images()));
     }
 
     @PostMapping("/{id}/stop")
-    public StopChatRs stop(@PathVariable UUID id) {
-        return new StopChatRs(chatService.stop(id));
+    public StopChatRs stop(@AuthenticationPrincipal AuthUser user, @PathVariable UUID id) {
+        return new StopChatRs(chatService.stop(user.id(), id));
     }
 
     @GetMapping("/{id}/history")
-    public ChatHistoryRs history(@PathVariable UUID id) {
-        return new ChatHistoryRs(id, chatService.history(id));
+    public ChatHistoryRs history(@AuthenticationPrincipal AuthUser user, @PathVariable UUID id) {
+        return new ChatHistoryRs(id, chatService.history(user.id(), id));
     }
 
     @DeleteMapping("/{id}/messages")
-    public DeleteMessagesRs deleteMessages(@PathVariable UUID id, @RequestParam List<UUID> ids) {
-        return new DeleteMessagesRs(chatService.deleteMessages(id, ids));
+    public DeleteMessagesRs deleteMessages(@AuthenticationPrincipal AuthUser user, @PathVariable UUID id, @RequestParam List<UUID> ids) {
+        return new DeleteMessagesRs(chatService.deleteMessages(user.id(), id, ids));
     }
 
     @PatchMapping("/{id}/model")
-    public UpdateModelRs updateModel(@PathVariable UUID id, @RequestBody UpdateModelRq rq) {
-        return new UpdateModelRs(chatService.updateModel(id, rq.modelId()));
+    public UpdateModelRs updateModel(@AuthenticationPrincipal AuthUser user, @PathVariable UUID id, @RequestBody UpdateModelRq rq) {
+        return new UpdateModelRs(chatService.updateModel(user.id(), id, rq.modelId()));
     }
 
     @DeleteMapping("/{id}")
-    public void delete(@PathVariable UUID id) {
-        chatService.delete(id);
+    public void delete(@AuthenticationPrincipal AuthUser user, @PathVariable UUID id) {
+        chatService.delete(user.id(), id);
     }
 
     @GetMapping("/{id}/files")
-    public JsonNode files(@PathVariable UUID id) {
+    public JsonNode files(@AuthenticationPrincipal AuthUser user, @PathVariable UUID id) {
+        chatService.requireOwned(user.id(), id);
         return agentRunnerClient.listFiles(id);
     }
 
     @GetMapping("/{id}/files/content")
-    public ResponseEntity<StreamingResponseBody> fileContent(@PathVariable UUID id, @RequestParam String path) {
+    public ResponseEntity<StreamingResponseBody> fileContent(@AuthenticationPrincipal AuthUser user, @PathVariable UUID id,
+                                                              @RequestParam String path) {
+        chatService.requireOwned(user.id(), id);
         return proxy(agentRunnerClient.openFile(id, path));
     }
 
     @GetMapping("/{id}/files/archive")
-    public ResponseEntity<StreamingResponseBody> filesArchive(@PathVariable UUID id) {
+    public ResponseEntity<StreamingResponseBody> filesArchive(@AuthenticationPrincipal AuthUser user, @PathVariable UUID id) {
+        chatService.requireOwned(user.id(), id);
         return proxy(agentRunnerClient.openArchive(id));
     }
 

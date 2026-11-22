@@ -18,6 +18,7 @@ public record ChatModelRs(
         int maxContextTokens,
         boolean thinking,
         int maxOutputTokens,
-        boolean vision
+        boolean vision,
+        boolean builtin
 ) {
 }

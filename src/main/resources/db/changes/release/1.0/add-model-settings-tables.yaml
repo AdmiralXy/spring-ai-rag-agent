@@ -1,16 +1,30 @@
 databaseChangeLog:
   - changeSet:
-      id: add-model-settings-tables
+      id: add-chat-models-table
       author: AdmiralXy
+      comment: Chat models of the users; the built-in model has no user
       changes:
         - createTable:
-            tableName: t_chat_model_settings
+            tableName: t_chat_models
             columns:
               - column:
                   name: c_id
                   type: uuid
                   constraints:
                     primaryKey: true
+              - column:
+                  name: c_user_id
+                  type: uuid
+                  constraints:
+                    foreignKeyName: fk_chat_models_users
+                    references: t_users(c_id)
+                    deleteCascade: true
+              - column:
+                  name: c_builtin
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
               - column:
                   name: c_provider
                   type: varchar(32)
@@ -29,6 +43,7 @@ databaseChangeLog:
               - column:
                   name: c_base_url
                   type: text
+                  defaultValue: ""
                   constraints:
                     nullable: false
               - column:
@@ -54,7 +69,7 @@ databaseChangeLog:
               - column:
                   name: c_temperature
                   type: double precision
-                  defaultValueNumeric: 1.0
+                  defaultValueNumeric: 1
                   constraints:
                     nullable: false
               - column:
@@ -64,24 +79,64 @@ databaseChangeLog:
                   constraints:
                     nullable: false
               - column:
+                  name: c_max_output_tokens
+                  type: int
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_thinking
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_vision
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
                   name: c_created_at
-                  type: timestamp
+                  type: timestamptz
+                  defaultValueComputed: now()
                   constraints:
                     nullable: false
               - column:
                   name: c_updated_at
-                  type: timestamp
+                  type: timestamptz
+                  defaultValueComputed: now()
                   constraints:
                     nullable: false
-
-        - createTable:
-            tableName: t_embeddings_model_settings
+        - sql:
+            sql: >
+              ALTER TABLE t_chat_models ADD CONSTRAINT ck_chat_models_owner CHECK (c_builtin OR c_user_id IS NOT NULL)
+        - createIndex:
+            tableName: t_chat_models
+            indexName: idx_chat_models_user
             columns:
               - column:
-                  name: c_id
-                  type: smallint
+                  name: c_user_id
+              - column:
+                  name: c_priority
+              - column:
+                  name: c_created_at
+
+  - changeSet:
+      id: add-embedding-models-table
+      author: AdmiralXy
+      changes:
+        - createTable:
+            tableName: t_embedding_models
+            columns:
+              - column:
+                  name: c_user_id
+                  type: uuid
                   constraints:
                     primaryKey: true
+                    foreignKeyName: fk_embedding_models_users
+                    references: t_users(c_id)
+                    deleteCascade: true
               - column:
                   name: c_provider
                   type: varchar(32)
@@ -114,24 +169,27 @@ databaseChangeLog:
                   constraints:
                     nullable: false
               - column:
-                  name: c_created_at
-                  type: timestamp
-                  constraints:
-                    nullable: false
-              - column:
                   name: c_updated_at
-                  type: timestamp
+                  type: timestamptz
+                  defaultValueComputed: now()
                   constraints:
                     nullable: false
 
+  - changeSet:
+      id: add-summarizer-models-table
+      author: AdmiralXy
+      changes:
         - createTable:
-            tableName: t_summarizer_model_settings
+            tableName: t_summarizer_models
             columns:
               - column:
-                  name: c_id
-                  type: smallint
+                  name: c_user_id
+                  type: uuid
                   constraints:
                     primaryKey: true
+                    foreignKeyName: fk_summarizer_models_users
+                    references: t_users(c_id)
+                    deleteCascade: true
               - column:
                   name: c_provider
                   type: varchar(32)
@@ -156,85 +214,8 @@ databaseChangeLog:
                   name: c_system_prompt
                   type: text
               - column:
-                  name: c_created_at
-                  type: timestamp
+                  name: c_updated_at
+                  type: timestamptz
+                  defaultValueComputed: now()
                   constraints:
                     nullable: false
-              - column:
-                  name: c_updated_at
-                  type: timestamp
-                  constraints:
-                    nullable: false
-
-  - changeSet:
-      id: add-spaces-dimensions-column
-      author: AdmiralXy
-      changes:
-        - addColumn:
-            tableName: t_spaces
-            columns:
-              - column:
-                  name: c_dimensions
-                  type: int
-                  defaultValueNumeric: ${embedding-dimensions}
-                  constraints:
-                    nullable: false
-
-  - changeSet:
-      id: seed-singleton-model-settings
-      author: AdmiralXy
-      changes:
-        - insert:
-            tableName: t_embeddings_model_settings
-            columns:
-              - column:
-                  name: c_id
-                  valueNumeric: 1
-              - column:
-                  name: c_provider
-                  value: OPENAI
-              - column:
-                  name: c_base_url
-                  value: https://api.openai.com
-              - column:
-                  name: c_api_key
-                  value: ""
-              - column:
-                  name: c_name
-                  value: text-embedding-3-small
-              - column:
-                  name: c_dimensions
-                  valueNumeric: ${embedding-dimensions}
-              - column:
-                  name: c_created_at
-                  valueComputed: NOW()
-              - column:
-                  name: c_updated_at
-                  valueComputed: NOW()
-        - insert:
-            tableName: t_summarizer_model_settings
-            columns:
-              - column:
-                  name: c_id
-                  valueNumeric: 1
-              - column:
-                  name: c_provider
-                  value: OPENAI
-              - column:
-                  name: c_name
-                  value: deepseek-chat
-              - column:
-                  name: c_base_url
-                  value: https://api.openai.com
-              - column:
-                  name: c_api_key
-                  value: ""
-              - column:
-                  name: c_system_prompt
-                  value: "Generate a short chat title based only on the message below. Rules: - Use the same language as the message. - Keep it concise, 3 to 7 words. - Do not use quotes. - Do not add punctuation at the end. - Return only the title text. Message: %s"
-              - column:
-                  name: c_created_at
-                  valueComputed: NOW()
-              - column:
-                  name: c_updated_at
-                  valueComputed: NOW()

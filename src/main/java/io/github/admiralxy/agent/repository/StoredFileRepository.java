@@ -21,16 +21,19 @@ public interface StoredFileRepository extends JpaRepository<StoredFileEntity, UU
                         f.id, f.name, f.extension, f.contentType, f.size, f.createdAt
                     )
                     from StoredFileEntity f
+                    where f.userId = :userId
                     """,
-            countQuery = "select count(f) from StoredFileEntity f"
+            countQuery = "select count(f) from StoredFileEntity f where f.userId = :userId"
     )
-    Page<StoredFile> findAllMetadata(Pageable pageable);
+    Page<StoredFile> findAllMetadata(@Param("userId") UUID userId, Pageable pageable);
+
+    Optional<StoredFileEntity> findByIdAndUserId(UUID id, UUID userId);
 
     @Query("select new io.github.admiralxy.agent.entity.StoredFileStorageRef(f.id, f.storagePath) "
-            + "from StoredFileEntity f where f.id = :id")
-    Optional<StoredFileStorageRef> findStorageRef(@Param("id") UUID id);
+            + "from StoredFileEntity f where f.id = :id and f.userId = :userId")
+    Optional<StoredFileStorageRef> findStorageRef(@Param("id") UUID id, @Param("userId") UUID userId);
 
     @Modifying
-    @Query("delete from StoredFileEntity f where f.id = :id")
-    int deleteByIdDirectly(@Param("id") UUID id);
+    @Query("delete from StoredFileEntity f where f.id = :id and f.userId = :userId")
+    int deleteByIdDirectly(@Param("id") UUID id, @Param("userId") UUID userId);
 }

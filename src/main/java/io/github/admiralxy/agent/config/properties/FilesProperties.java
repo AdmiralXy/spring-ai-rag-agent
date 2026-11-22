@@ -25,7 +25,6 @@ public class FilesProperties implements InitializingBean {
     private static final String MAX_BATCH_INVALID = "app.files.uploads.max-batch-chunks must be positive";
     private static final String MAX_REQUEST_TOO_SMALL = "app.files.uploads.max-request-size must be at least %d "
             + "bytes to fit an encrypted base64 chunk of %d bytes";
-    private static final String KDF_SALT_EMPTY = "app.files.uploads.encryption.kdf-salt must not be empty";
     private static final String KDF_ITERATIONS_INVALID =
             "app.files.uploads.encryption.kdf-iterations must be at least %d";
 
@@ -53,7 +52,6 @@ public class FilesProperties implements InitializingBean {
         long minRequest = (chunk + GCM_TAG_BYTES + 2) / BYTES_PER_GROUP * BASE64_GROUP + REQUEST_OVERHEAD_BYTES;
         require(uploads.maxRequestSize.toBytes() >= minRequest, MAX_REQUEST_TOO_SMALL.formatted(minRequest, chunk));
         Encryption encryption = uploads.encryption;
-        require(encryption.kdfSalt != null && !encryption.kdfSalt.isEmpty(), KDF_SALT_EMPTY);
         require(encryption.kdfIterations >= Encryption.MIN_KDF_ITERATIONS,
                 KDF_ITERATIONS_INVALID.formatted(Encryption.MIN_KDF_ITERATIONS));
     }
@@ -111,7 +109,7 @@ public class FilesProperties implements InitializingBean {
         private Duration cleanupInterval = Duration.ofMinutes(15);
 
         /**
-         * Encryption of upload requests; the password is the admin password.
+         * Encryption of upload requests; the key is derived from the upload password of the user.
          */
         private Encryption encryption = new Encryption();
     }
@@ -121,13 +119,6 @@ public class FilesProperties implements InitializingBean {
     public static class Encryption {
 
         static final int MIN_KDF_ITERATIONS = 1;
-
-        private static final String DEFAULT_KDF_SALT = "default-kdf-salt";
-
-        /**
-         * Public PBKDF2 salt (UTF-8 string), published to clients by {@code GET /files/uploads/config}.
-         */
-        private String kdfSalt = DEFAULT_KDF_SALT;
 
         /**
          * PBKDF2-HMAC-SHA256 iterations.

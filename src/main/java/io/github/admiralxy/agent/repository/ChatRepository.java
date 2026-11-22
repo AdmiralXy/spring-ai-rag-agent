@@ -10,11 +10,18 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface ChatRepository extends JpaRepository<ChatEntity, UUID> {
 
-    Page<ChatEntity> findByTitleContainingIgnoreCase(String title, Pageable pageable);
+    Page<ChatEntity> findByUserId(UUID userId, Pageable pageable);
+
+    Page<ChatEntity> findByUserIdAndTitleContainingIgnoreCase(UUID userId, String title, Pageable pageable);
+
+    Optional<ChatEntity> findByIdAndUserId(UUID id, UUID userId);
+
+    boolean existsByIdAndUserId(UUID id, UUID userId);
 
     @Modifying
     @Transactional

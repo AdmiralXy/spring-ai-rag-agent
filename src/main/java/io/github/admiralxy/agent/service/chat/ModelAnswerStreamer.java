@@ -75,7 +75,7 @@ public class ModelAnswerStreamer implements AnswerStreamer {
     public Flux<ServerSentEvent<String>> stream(AnswerRequest request) {
         ChatModelEntity model = request.model();
         ContextBudget budget = ContextBudget.of(model);
-        String context = ragService.buildContext(request.spaceIds(), request.text(), request.previousQuestion(),
+        String context = ragService.buildContext(request.userId(), request.spaceIds(), request.text(), request.previousQuestion(),
                 budget.ragTokens(ragProperties));
         String systemPrompt = systemPrompt(model.getSystemPrompt(), context);
         EventFilter history = historyWindow(request, budget, systemPrompt);

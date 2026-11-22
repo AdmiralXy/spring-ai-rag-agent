@@ -1,0 +1,96 @@
+databaseChangeLog:
+  - changeSet:
+      id: add-users-table
+      author: AdmiralXy
+      comment: Accounts; c_upload_key is the PBKDF2 result of the upload password, derived by the client
+      changes:
+        - createTable:
+            tableName: t_users
+            columns:
+              - column:
+                  name: c_id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: c_email
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_password_hash
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_upload_kdf_salt
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_upload_key
+                  type: bytea
+              - column:
+                  name: c_created_at
+                  type: timestamptz
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_updated_at
+                  type: timestamptz
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - createIndex:
+            tableName: t_users
+            indexName: ux_users_email
+            unique: true
+            columns:
+              - column:
+                  name: c_email
+
+  - changeSet:
+      id: add-user-tokens-table
+      author: AdmiralXy
+      comment: Bearer tokens, only their hex SHA-256 is stored
+      changes:
+        - createTable:
+            tableName: t_user_tokens
+            columns:
+              - column:
+                  name: c_token_hash
+                  type: char(64)
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: c_user_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_user_tokens_users
+                    references: t_users(c_id)
+                    deleteCascade: true
+              - column:
+                  name: c_created_at
+                  type: timestamptz
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_expires_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+        - createIndex:
+            tableName: t_user_tokens
+            indexName: idx_user_tokens_user
+            columns:
+              - column:
+                  name: c_user_id
+        - createIndex:
+            tableName: t_user_tokens
+            indexName: idx_user_tokens_expires_at
+            columns:
+              - column:
+                  name: c_expires_at

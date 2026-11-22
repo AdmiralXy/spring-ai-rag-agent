@@ -34,8 +34,8 @@ public class ChatTitleGenerator {
         if (chat.isTitleGenerated() || !transcript.isEmpty(chat.getId())) {
             return;
         }
-        summarizerRepository.findById(SummarizerModelEntity.SINGLETON_ID)
-                .filter(summarizer -> StringUtils.isNotBlank(summarizer.getApiKey()))
+        summarizerRepository.findById(chat.getUserId())
+                .filter(summarizer -> StringUtils.isNoneBlank(summarizer.getApiKey(), summarizer.getName()))
                 .ifPresent(summarizer -> generate(chat, summarizer, message));
     }
 

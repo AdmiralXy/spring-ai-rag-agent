@@ -1,0 +1,145 @@
+databaseChangeLog:
+  - changeSet:
+      id: add-chats-table
+      author: AdmiralXy
+      changes:
+        - createTable:
+            tableName: t_chats
+            columns:
+              - column:
+                  name: c_id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: c_user_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_chats_users
+                    references: t_users(c_id)
+                    deleteCascade: true
+              - column:
+                  name: c_title
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_title_generated
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_model_id
+                  type: uuid
+              - column:
+                  name: c_created_at
+                  type: timestamptz
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_updated_at
+                  type: timestamptz
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: t_chats
+            baseColumnNames: c_model_id
+            referencedTableName: t_chat_models
+            referencedColumnNames: c_id
+            constraintName: fk_chats_chat_models
+            onDelete: SET NULL
+        - createIndex:
+            tableName: t_chats
+            indexName: idx_chats_user_updated_at
+            columns:
+              - column:
+                  name: c_user_id
+              - column:
+                  name: c_updated_at
+                  descending: true
+
+  - changeSet:
+      id: add-chat-spaces-table
+      author: AdmiralXy
+      changes:
+        - createTable:
+            tableName: t_chat_spaces
+            columns:
+              - column:
+                  name: c_chat_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_chat_spaces_chats
+                    references: t_chats(c_id)
+                    deleteCascade: true
+              - column:
+                  name: c_space_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_chat_spaces_spaces
+                    references: t_spaces(c_id)
+                    deleteCascade: true
+        - addPrimaryKey:
+            tableName: t_chat_spaces
+            columnNames: c_chat_id, c_space_id
+            constraintName: pk_chat_spaces
+
+  - changeSet:
+      id: add-chat-messages-table
+      author: AdmiralXy
+      changes:
+        - createTable:
+            tableName: t_chat_messages
+            columns:
+              - column:
+                  name: c_id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: c_chat_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_chat_messages_chats
+                    references: t_chats(c_id)
+                    deleteCascade: true
+              - column:
+                  name: c_role
+                  type: varchar(16)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_content
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_parts
+                  type: text
+              - column:
+                  name: c_attachments
+                  type: text
+              - column:
+                  name: c_stats
+                  type: text
+              - column:
+                  name: c_created_at
+                  type: timestamptz
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - createIndex:
+            tableName: t_chat_messages
+            indexName: idx_chat_messages_chat_created
+            columns:
+              - column:
+                  name: c_chat_id
+              - column:
+                  name: c_created_at

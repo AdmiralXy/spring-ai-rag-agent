@@ -6,14 +6,18 @@ import io.github.admiralxy.agent.domain.UploadSession;
 import io.github.admiralxy.agent.domain.UploadSessionFile;
 import io.github.admiralxy.agent.domain.UploadSessionState;
 import io.github.admiralxy.agent.domain.UploadSessionStatus;
+import io.github.admiralxy.agent.entity.UserEntity;
+import io.github.admiralxy.agent.exception.ApiException;
 import io.github.admiralxy.agent.exception.InvalidFileException;
 import io.github.admiralxy.agent.exception.LimitExceededException;
 import io.github.admiralxy.agent.exception.UploadConflictException;
 import io.github.admiralxy.agent.exception.UploadExpiredException;
 import io.github.admiralxy.agent.exception.UploadNotFoundException;
 import io.github.admiralxy.agent.repository.UploadSessionStore;
+import io.github.admiralxy.agent.repository.UserRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -68,11 +72,13 @@ public class UploadSessionServiceImpl implements UploadSessionService {
     private static final String CHUNKS_MISSING = "%d chunk(s) are missing; first missing: file %d chunk %d";
     private static final String SESSION_NOT_FOUND = "Upload session not found: %s";
     private static final String REVERT_FAILED = "Failed to revert upload {} to ACTIVE";
+    private static final String KEY_NOT_SET = "Set an upload password on the Account page before uploading folders";
 
     private final UploadSessionStore store;
     private final UploadChunkStore chunkStore;
     private final UploadCrypto crypto;
     private final FileStorageService fileStorageService;
+    private final UserRepository userRepository;
     private final JsonMapper jsonMapper;
     private final TransactionTemplate transactionTemplate;
     private final Clock clock;
@@ -84,6 +90,7 @@ public class UploadSessionServiceImpl implements UploadSessionService {
                                     UploadChunkStore chunkStore,
                                     UploadCrypto crypto,
                                     FileStorageService fileStorageService,
+                                    UserRepository userRepository,
                                     JsonMapper jsonMapper,
                                     PlatformTransactionManager transactionManager,
                                     Clock clock,
@@ -92,6 +99,7 @@ public class UploadSessionServiceImpl implements UploadSessionService {
         this.chunkStore = chunkStore;
         this.crypto = crypto;
         this.fileStorageService = fileStorageService;
+        this.userRepository = userRepository;
         this.jsonMapper = jsonMapper;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.clock = clock;
@@ -99,38 +107,38 @@ public class UploadSessionServiceImpl implements UploadSessionService {
     }
 
     @Override
-    public UploadSessionState create(byte[] keySalt, EncryptedPayload encryptedManifest) {
-        byte[] plaintext = crypto.decrypt(keySalt, encryptedManifest.iv(), encryptedManifest.data(),
+    public UploadSessionState create(UUID userId, byte[] keySalt, EncryptedPayload encryptedManifest) {
+        byte[] plaintext = crypto.decrypt(masterKey(userId), keySalt, encryptedManifest.iv(), encryptedManifest.data(),
                 UploadCrypto.createAad());
         UploadManifest manifest = readManifest(plaintext);
         String name = FileNameRules.normalizeName(manifest.name());
         List<UploadSessionFile> files = toFiles(manifest);
         Instant now = clock.instant();
-        UploadSession session = new UploadSession(UUID.randomUUID(), name, chunkSize(), UploadSessionStatus.ACTIVE,
+        UploadSession session = new UploadSession(UUID.randomUUID(), userId, name, chunkSize(), UploadSessionStatus.ACTIVE,
                 now, now.plus(ttl()), keySalt.clone());
         store.create(session, files);
         return new UploadSessionState(session, files, Map.of());
     }
 
     @Override
-    public void putChunk(UUID uploadId, EncryptedChunk chunk) {
-        storeChunks(uploadId, List.of(chunk), false);
+    public void putChunk(UUID userId, UUID uploadId, EncryptedChunk chunk) {
+        storeChunks(userId, uploadId, List.of(chunk), false);
     }
 
     @Override
-    public void putChunks(UUID uploadId, List<EncryptedChunk> chunks) {
+    public void putChunks(UUID userId, UUID uploadId, List<EncryptedChunk> chunks) {
         if (chunks == null || chunks.isEmpty()) {
             throw new InvalidFileException(CHUNKS_EMPTY);
         }
         if (chunks.size() > limits.getMaxBatchChunks()) {
             throw new LimitExceededException(TOO_MANY_CHUNKS.formatted(chunks.size(), limits.getMaxBatchChunks()));
         }
-        storeChunks(uploadId, chunks, true);
+        storeChunks(userId, uploadId, chunks, true);
     }
 
     @Override
-    public UploadSessionState getStatus(UUID uploadId) {
-        UploadSession session = find(uploadId);
+    public UploadSessionState getStatus(UUID userId, UUID uploadId) {
+        UploadSession session = find(userId, uploadId);
         if (session.isExpired(clock.instant())) {
             throw new UploadExpiredException(uploadId);
         }
@@ -139,8 +147,8 @@ public class UploadSessionServiceImpl implements UploadSessionService {
     }
 
     @Override
-    public StoredFile complete(UUID uploadId, EncryptedPayload proof) {
-        UploadSessionState state = locks.write(uploadId, () -> startCompletion(uploadId, proof));
+    public StoredFile complete(UUID userId, UUID uploadId, EncryptedPayload proof) {
+        UploadSessionState state = locks.write(uploadId, () -> startCompletion(userId, uploadId, proof));
         Path archive = null;
         try {
             archive = IoActions.unchecked(() -> chunkStore.archiveTempPath(uploadId));
@@ -148,7 +156,7 @@ public class UploadSessionServiceImpl implements UploadSessionService {
             IoActions.unchecked(() -> TarZstArchiveWriter.write(builtArchive, state.files(),
                     (file, chunk) -> chunkStore.chunkPath(uploadId, file.index(), chunk), clock.instant()));
             StoredFile stored = transactionTemplate.execute(status -> {
-                StoredFile file = fileStorageService.storeArchive(state.session().name(), builtArchive);
+                StoredFile file = fileStorageService.storeArchive(userId, state.session().name(), builtArchive);
                 if (!store.delete(uploadId)) {
                     throw notFound(uploadId);
                 }
@@ -167,9 +175,9 @@ public class UploadSessionServiceImpl implements UploadSessionService {
     }
 
     @Override
-    public void cancel(UUID uploadId, EncryptedPayload proof) {
+    public void cancel(UUID userId, UUID uploadId, EncryptedPayload proof) {
         locks.write(uploadId, () -> {
-            verifyProof(find(uploadId), proof, ACTION_CANCEL);
+            verifyProof(find(userId, uploadId), proof, ACTION_CANCEL);
             if (!store.delete(uploadId)) {
                 throw notFound(uploadId);
             }
@@ -249,8 +257,8 @@ public class UploadSessionServiceImpl implements UploadSessionService {
         return files;
     }
 
-    private void storeChunks(UUID uploadId, List<EncryptedChunk> chunks, boolean batch) {
-        UploadSession session = find(uploadId);
+    private void storeChunks(UUID userId, UUID uploadId, List<EncryptedChunk> chunks, boolean batch) {
+        UploadSession session = find(userId, uploadId);
         checkActive(session, clock.instant());
         List<DecryptedChunk> decrypted = decrypt(session, chunks, fileLookup(uploadId, batch), batch);
         List<Path> temps = new ArrayList<>(decrypted.size());
@@ -279,6 +287,7 @@ public class UploadSessionServiceImpl implements UploadSessionService {
     private List<DecryptedChunk> decrypt(UploadSession session, List<EncryptedChunk> chunks,
                                          IntFunction<Optional<UploadSessionFile>> files, boolean batch) {
         List<DecryptedChunk> decrypted = new ArrayList<>(chunks.size());
+        byte[] masterKey = masterKey(session.userId());
         Set<Long> seen = new HashSet<>();
         for (int k = 0; k < chunks.size(); k++) {
             String prefix = batch ? BATCH_PREFIX.formatted(k) : StringUtils.EMPTY;
@@ -303,7 +312,7 @@ public class UploadSessionServiceImpl implements UploadSessionService {
                 throw new InvalidFileException(CHUNK_SIZE_MISMATCH.formatted(prefix, chunkIndex, fileIndex, expected,
                         Math.max(actual, 0)));
             }
-            byte[] content = crypto.decrypt(session.keySalt(), chunk.payload().iv(), chunk.payload().data(),
+            byte[] content = crypto.decrypt(masterKey, session.keySalt(), chunk.payload().iv(), chunk.payload().data(),
                     UploadCrypto.chunkAad(session.id(), fileIndex, chunkIndex));
             decrypted.add(new DecryptedChunk(fileIndex, chunkIndex, content));
         }
@@ -319,9 +328,9 @@ public class UploadSessionServiceImpl implements UploadSessionService {
         return index -> Optional.ofNullable(files.get(index));
     }
 
-    private UploadSessionState startCompletion(UUID uploadId, EncryptedPayload proof) {
+    private UploadSessionState startCompletion(UUID userId, UUID uploadId, EncryptedPayload proof) {
         Instant now = clock.instant();
-        UploadSession session = find(uploadId);
+        UploadSession session = find(userId, uploadId);
         verifyProof(session, proof, ACTION_COMPLETE);
         checkActive(session, now);
         List<UploadSessionFile> files = store.findFiles(uploadId);
@@ -342,7 +351,7 @@ public class UploadSessionServiceImpl implements UploadSessionService {
         if (proof == null) {
             throw new InvalidFileException(PROOF_REQUIRED);
         }
-        byte[] plaintext = crypto.decrypt(session.keySalt(), proof.iv(), proof.data(),
+        byte[] plaintext = crypto.decrypt(masterKey(session.userId()), session.keySalt(), proof.iv(), proof.data(),
                 UploadCrypto.actionAad(action, session.id()));
         if (plaintext.length != 0) {
             throw new InvalidFileException(PROOF_NOT_EMPTY);
@@ -408,8 +417,18 @@ public class UploadSessionServiceImpl implements UploadSessionService {
         }
     }
 
-    private UploadSession find(UUID uploadId) {
-        return store.find(uploadId).orElseThrow(() -> notFound(uploadId));
+    private UploadSession find(UUID userId, UUID uploadId) {
+        return store.find(uploadId)
+                .filter(session -> session.userId().equals(userId))
+                .orElseThrow(() -> notFound(uploadId));
+    }
+
+    private byte[] masterKey(UUID userId) {
+        byte[] key = userRepository.findById(userId).map(UserEntity::getUploadKey).orElse(null);
+        if (key == null) {
+            throw new ApiException(HttpStatus.PRECONDITION_FAILED, KEY_NOT_SET);
+        }
+        return key;
     }
 
     private long chunkSize() {

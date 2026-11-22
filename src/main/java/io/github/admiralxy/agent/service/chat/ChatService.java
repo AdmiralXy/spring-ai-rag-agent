@@ -13,19 +13,24 @@ import java.util.UUID;
 
 public interface ChatService {
 
-    Page<Chat> getAll(int page, int size, @Nullable String query);
+    Page<Chat> getAll(UUID userId, int page, int size, @Nullable String query);
 
-    Chat create(Collection<UUID> spaceIds);
+    Chat create(UUID userId, Collection<UUID> spaceIds);
 
-    UUID updateModel(UUID chatId, UUID modelId);
+    UUID updateModel(UUID userId, UUID chatId, UUID modelId);
 
-    Flux<ServerSentEvent<String>> send(UUID chatId, SendMessageCommand command);
+    Flux<ServerSentEvent<String>> send(UUID userId, UUID chatId, SendMessageCommand command);
 
-    boolean stop(UUID chatId);
+    boolean stop(UUID userId, UUID chatId);
 
-    List<ChatMessage> history(UUID chatId);
+    List<ChatMessage> history(UUID userId, UUID chatId);
 
-    int deleteMessages(UUID chatId, Collection<UUID> messageIds);
+    int deleteMessages(UUID userId, UUID chatId, Collection<UUID> messageIds);
 
-    void delete(UUID chatId);
+    void delete(UUID userId, UUID chatId);
+
+    /**
+     * Fails unless the chat belongs to the user.
+     */
+    void requireOwned(UUID userId, UUID chatId);
 }

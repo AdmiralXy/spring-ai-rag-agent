@@ -8,6 +8,7 @@ public record EmbeddingsModelRs(
         String apiKey,
         String name,
         int dimensions,
-        int maxDocumentTokens
+        int maxDocumentTokens,
+        long indexedChunks
 ) {
 }

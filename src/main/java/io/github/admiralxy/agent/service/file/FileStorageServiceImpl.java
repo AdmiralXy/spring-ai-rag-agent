@@ -56,10 +56,10 @@ public class FileStorageServiceImpl implements FileStorageService {
 
     @Override
     @Transactional
-    public StoredFile upload(String name, String extension, String base64Content) {
+    public StoredFile upload(UUID userId, String name, String extension, String base64Content) {
         String normalizedExtension = FileNameRules.normalizeExtension(extension);
         byte[] content = decode(base64Content);
-        StoredFileEntity entity = newEntity(name, normalizedExtension, contentType(normalizedExtension),
+        StoredFileEntity entity = newEntity(userId, name, normalizedExtension, contentType(normalizedExtension),
                 content.length);
         entity.setContent(content);
         return toDomain(storedFileRepository.save(entity));
@@ -67,12 +67,12 @@ public class FileStorageServiceImpl implements FileStorageService {
 
     @Override
     @Transactional
-    public StoredFile storeArchive(String name, Path archive) {
+    public StoredFile storeArchive(UUID userId, String name, Path archive) {
         try {
             long size = Files.size(archive);
             String key = contentStore.importFile(archive);
             TransactionCallbacks.onRollback(() -> contentStore.deleteQuietly(key));
-            StoredFileEntity entity = newEntity(name, ARCHIVE_EXTENSION, ARCHIVE_CONTENT_TYPE, size);
+            StoredFileEntity entity = newEntity(userId, name, ARCHIVE_EXTENSION, ARCHIVE_CONTENT_TYPE, size);
             entity.setStoragePath(key);
             return toDomain(storedFileRepository.save(entity));
         } catch (IOException e) {
@@ -82,7 +82,7 @@ public class FileStorageServiceImpl implements FileStorageService {
 
     @Override
     @Transactional(readOnly = true)
-    public Page<StoredFile> getAll(int page, int size) {
+    public Page<StoredFile> getAll(UUID userId, int page, int size) {
         if (page < 0) {
             throw new InvalidFileException(PAGE_INVALID);
         }
@@ -90,23 +90,23 @@ public class FileStorageServiceImpl implements FileStorageService {
             throw new InvalidFileException(SIZE_INVALID.formatted(MAX_PAGE_SIZE));
         }
         Sort sort = Sort.by(Sort.Order.desc(SORT_CREATED_AT), Sort.Order.desc(SORT_ID));
-        return storedFileRepository.findAllMetadata(PageRequest.of(page, size, sort));
+        return storedFileRepository.findAllMetadata(userId, PageRequest.of(page, size, sort));
     }
 
     @Override
     @Transactional(readOnly = true)
-    public StoredFileContent download(UUID id) {
-        StoredFileEntity entity = storedFileRepository.findById(id)
+    public StoredFileContent download(UUID userId, UUID id) {
+        StoredFileEntity entity = storedFileRepository.findByIdAndUserId(id, userId)
                 .orElseThrow(() -> new StoredFileNotFoundException(id));
         return new StoredFileContent(toDomain(entity), body(entity));
     }
 
     @Override
     @Transactional
-    public void delete(UUID id) {
-        StoredFileStorageRef ref = storedFileRepository.findStorageRef(id)
+    public void delete(UUID userId, UUID id) {
+        StoredFileStorageRef ref = storedFileRepository.findStorageRef(id, userId)
                 .orElseThrow(() -> new StoredFileNotFoundException(id));
-        if (storedFileRepository.deleteByIdDirectly(id) == 0) {
+        if (storedFileRepository.deleteByIdDirectly(id, userId) == 0) {
             throw new StoredFileNotFoundException(id);
         }
         if (ref.storagePath() != null) {
@@ -140,8 +140,9 @@ public class FileStorageServiceImpl implements FileStorageService {
         return content;
     }
 
-    private static StoredFileEntity newEntity(String name, String extension, String contentType, long size) {
+    private static StoredFileEntity newEntity(UUID userId, String name, String extension, String contentType, long size) {
         StoredFileEntity entity = new StoredFileEntity();
+        entity.setUserId(userId);
         entity.setName(FileNameRules.normalizeName(name));
         entity.setExtension(extension);
         entity.setContentType(contentType);

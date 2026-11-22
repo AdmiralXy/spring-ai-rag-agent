@@ -18,7 +18,8 @@ public record UploadConfigRs(
             String cipher,
             int keySaltLength,
             int ivLength,
-            int tagLength
+            int tagLength,
+            boolean keyConfigured
     ) {
     }
 }

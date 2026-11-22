@@ -1,6 +1,5 @@
 package io.github.admiralxy.agent.service.file;
 
-import io.github.admiralxy.agent.config.properties.AdminProperties;
 import io.github.admiralxy.agent.config.properties.FilesProperties;
 import io.github.admiralxy.agent.exception.InvalidFileException;
 import io.github.admiralxy.agent.exception.UploadDecryptionException;
@@ -21,6 +20,8 @@ class UploadCryptoTest {
     private static final HexFormat HEX = HexFormat.of();
     private static final byte[] SALT = new byte[UploadCrypto.KEY_SALT_LENGTH];
     private static final byte[] IV = new byte[UploadCrypto.IV_LENGTH];
+    private static final byte[] KEY = UploadCrypto.pbkdf2("correct-password-123", SALT, 10);
+    private static final byte[] OTHER_KEY = UploadCrypto.pbkdf2("another-password-12", SALT, 10);
 
     @Test
     void hkdfMatchesRfc5869TestCase1() {
@@ -51,49 +52,44 @@ class UploadCryptoTest {
 
     @Test
     void roundTripAndAuthentication() {
-        UploadCrypto crypto = crypto("correct-password-123");
+        UploadCrypto crypto = crypto();
         String aad = UploadCrypto.chunkAad(UUID.randomUUID(), 1, 2);
         byte[] plaintext = "secret content".getBytes(StandardCharsets.UTF_8);
 
-        byte[] ciphertext = crypto.encrypt(SALT, IV, plaintext, aad);
+        byte[] ciphertext = crypto.encrypt(KEY, SALT, IV, plaintext, aad);
 
         assertEquals(plaintext.length + UploadCrypto.TAG_LENGTH, ciphertext.length);
-        assertArrayEquals(plaintext, crypto.decrypt(SALT, IV, ciphertext, aad));
+        assertArrayEquals(plaintext, crypto.decrypt(KEY, SALT, IV, ciphertext, aad));
         assertThrows(UploadDecryptionException.class,
-                () -> crypto("another-password-12").decrypt(SALT, IV, ciphertext, aad));
+                () -> crypto.decrypt(OTHER_KEY, SALT, IV, ciphertext, aad));
         assertThrows(UploadDecryptionException.class,
-                () -> crypto.decrypt(SALT, IV, ciphertext, UploadCrypto.createAad()));
+                () -> crypto.decrypt(KEY, SALT, IV, ciphertext, UploadCrypto.createAad()));
         byte[] otherSalt = SALT.clone();
         otherSalt[0] = 1;
-        assertThrows(UploadDecryptionException.class, () -> crypto.decrypt(otherSalt, IV, ciphertext, aad));
+        assertThrows(UploadDecryptionException.class, () -> crypto.decrypt(KEY, otherSalt, IV, ciphertext, aad));
         byte[] tampered = ciphertext.clone();
         tampered[0] ^= 1;
-        assertThrows(UploadDecryptionException.class, () -> crypto.decrypt(SALT, IV, tampered, aad));
+        assertThrows(UploadDecryptionException.class, () -> crypto.decrypt(KEY, SALT, IV, tampered, aad));
     }
 
     @Test
     void malformedInputIsRejected() {
-        UploadCrypto crypto = crypto("correct-password-123");
+        UploadCrypto crypto = crypto();
 
-        assertThrows(InvalidFileException.class, () -> crypto.decrypt(new byte[15], IV, new byte[16], "x"));
-        assertThrows(InvalidFileException.class, () -> crypto.decrypt(SALT, new byte[16], new byte[16], "x"));
-        assertThrows(InvalidFileException.class, () -> crypto.decrypt(SALT, IV, new byte[15], "x"));
+        assertThrows(InvalidFileException.class, () -> crypto.decrypt(KEY, new byte[15], IV, new byte[16], "x"));
+        assertThrows(InvalidFileException.class, () -> crypto.decrypt(KEY, SALT, new byte[16], new byte[16], "x"));
+        assertThrows(InvalidFileException.class, () -> crypto.decrypt(KEY, SALT, IV, new byte[15], "x"));
     }
 
     @Test
-    void shortAdminPasswordIsRejected() {
-        AdminProperties admin = new AdminProperties();
-        admin.setPassword("ab");
-
-        assertThrows(IllegalStateException.class, admin::afterPropertiesSet);
+    void masterKeyOfWrongLengthIsRejected() {
+        assertThrows(InvalidFileException.class, () -> crypto().decrypt(new byte[16], SALT, IV, new byte[16], "x"));
     }
 
-    private static UploadCrypto crypto(String password) {
+    private static UploadCrypto crypto() {
         FilesProperties properties = new FilesProperties();
         properties.getUploads().getEncryption().setKdfIterations(10);
-        AdminProperties admin = new AdminProperties();
-        admin.setPassword(password);
-        return new UploadCrypto(properties, admin);
+        return new UploadCrypto(properties);
     }
 
     private static byte[] referencePbkdf2(byte[] password, byte[] salt, int iterations) throws Exception {

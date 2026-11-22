@@ -1,6 +1,5 @@
 package io.github.admiralxy.agent.service.file;
 
-import io.github.admiralxy.agent.config.properties.AdminProperties;
 import io.github.admiralxy.agent.config.properties.FilesProperties;
 import io.github.admiralxy.agent.exception.InvalidFileException;
 import io.github.admiralxy.agent.exception.UploadDecryptionException;
@@ -36,17 +35,15 @@ public class UploadCrypto {
     private static final String AAD_CREATE = AAD_PREFIX + "create";
     private static final String AAD_CHUNK = AAD_PREFIX + "chunk|%s|%d|%d";
     private static final String AAD_ACTION = AAD_PREFIX + "%s|%s";
-    private static final String DEV_PASSWORD_PREFIX = "dev-";
     private static final String HMAC = "HmacSHA256";
     private static final String PBKDF2 = "PBKDF2WithHmacSHA256";
     private static final String CIPHER = "AES/GCM/NoPadding";
     private static final String AES = "AES";
     private static final String KEY_SALT_FIELD = "keySalt";
     private static final String IV_FIELD = "iv";
-    private static final String DEV_PASSWORD_WARNING =
-            "Admin password is the development default; set ADMIN_PASSWORD in production";
     private static final String DATA_TOO_SHORT = "Field 'data' is too short to contain an authentication tag";
     private static final String WRONG_LENGTH = "Field '%s' must be %d bytes";
+    private static final String MASTER_KEY = "masterKey";
     private static final String DECRYPTION_FAILED = "AES-GCM decryption failed";
     private static final String ENCRYPTION_FAILED = "AES-GCM encryption failed";
     private static final String PBKDF2_UNAVAILABLE = "PBKDF2 is not available";
@@ -55,19 +52,15 @@ public class UploadCrypto {
     private static final int BITS_PER_BYTE = 8;
     private static final byte HKDF_BLOCK = 1;
 
-    private final byte[] masterKey;
-    private final String kdfSalt;
     private final int kdfIterations;
 
-    public UploadCrypto(FilesProperties properties, AdminProperties adminProperties) {
-        FilesProperties.Encryption encryption = properties.getUploads().getEncryption();
-        String password = adminProperties.getPassword();
-        this.kdfSalt = encryption.getKdfSalt();
-        this.kdfIterations = encryption.getKdfIterations();
-        this.masterKey = pbkdf2(password, kdfSalt.getBytes(StandardCharsets.UTF_8), kdfIterations);
-        if (password.startsWith(DEV_PASSWORD_PREFIX)) {
-            log.warn(DEV_PASSWORD_WARNING);
-        }
+    /**
+     * The master key of a user is PBKDF2-SHA256(upload password, kdfSalt of the user, kdfIterations). The client
+     * derives it when the password is set and the server only stores the result, so neither the password nor the
+     * key travel with uploads.
+     */
+    public UploadCrypto(FilesProperties properties) {
+        this.kdfIterations = properties.getUploads().getEncryption().getKdfIterations();
     }
 
     public static String createAad() {
@@ -82,21 +75,18 @@ public class UploadCrypto {
         return AAD_ACTION.formatted(action, uploadId);
     }
 
-    public String kdfSalt() {
-        return kdfSalt;
-    }
-
     public int kdfIterations() {
         return kdfIterations;
     }
 
-    public byte[] decrypt(byte[] keySalt, byte[] iv, byte[] ciphertext, String aad) {
+    public byte[] decrypt(byte[] masterKey, byte[] keySalt, byte[] iv, byte[] ciphertext, String aad) {
+        requireLength(masterKey, KEY_LENGTH, MASTER_KEY);
         requireLengths(keySalt, iv);
         if (ciphertext.length < TAG_LENGTH) {
             throw new InvalidFileException(DATA_TOO_SHORT);
         }
         try {
-            return cipher(Cipher.DECRYPT_MODE, keySalt, iv, aad).doFinal(ciphertext);
+            return cipher(Cipher.DECRYPT_MODE, masterKey, keySalt, iv, aad).doFinal(ciphertext);
         } catch (AEADBadTagException e) {
             throw new UploadDecryptionException();
         } catch (GeneralSecurityException e) {
@@ -104,10 +94,11 @@ public class UploadCrypto {
         }
     }
 
-    public byte[] encrypt(byte[] keySalt, byte[] iv, byte[] plaintext, String aad) {
+    public byte[] encrypt(byte[] masterKey, byte[] keySalt, byte[] iv, byte[] plaintext, String aad) {
+        requireLength(masterKey, KEY_LENGTH, MASTER_KEY);
         requireLengths(keySalt, iv);
         try {
-            return cipher(Cipher.ENCRYPT_MODE, keySalt, iv, aad).doFinal(plaintext);
+            return cipher(Cipher.ENCRYPT_MODE, masterKey, keySalt, iv, aad).doFinal(plaintext);
         } catch (GeneralSecurityException e) {
             throw new IllegalStateException(ENCRYPTION_FAILED, e);
         }
@@ -139,7 +130,8 @@ public class UploadCrypto {
         }
     }
 
-    private Cipher cipher(int mode, byte[] keySalt, byte[] iv, String aad) throws GeneralSecurityException {
+    private static Cipher cipher(int mode, byte[] masterKey, byte[] keySalt, byte[] iv, String aad)
+            throws GeneralSecurityException {
         byte[] sessionKey = hkdfSha256(masterKey, keySalt, HKDF_INFO.getBytes(StandardCharsets.UTF_8));
         try {
             Cipher cipher = Cipher.getInstance(CIPHER);

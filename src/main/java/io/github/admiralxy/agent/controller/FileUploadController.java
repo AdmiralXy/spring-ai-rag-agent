@@ -12,15 +12,19 @@ import io.github.admiralxy.agent.controller.response.file.UploadSessionFileRs;
 import io.github.admiralxy.agent.controller.response.file.UploadSessionFileStatusRs;
 import io.github.admiralxy.agent.controller.response.file.UploadStatusRs;
 import io.github.admiralxy.agent.domain.UploadSessionState;
+import io.github.admiralxy.agent.entity.UserEntity;
 import io.github.admiralxy.agent.exception.InvalidFileException;
+import io.github.admiralxy.agent.security.AuthUser;
 import io.github.admiralxy.agent.service.file.Base64Content;
 import io.github.admiralxy.agent.service.file.EncryptedChunk;
 import io.github.admiralxy.agent.service.file.EncryptedPayload;
 import io.github.admiralxy.agent.service.file.UploadCrypto;
 import io.github.admiralxy.agent.service.file.UploadSessionService;
+import io.github.admiralxy.agent.service.user.UserService;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -59,10 +63,12 @@ public class FileUploadController {
     private final UploadSessionService uploadSessionService;
     private final UploadCrypto uploadCrypto;
     private final FilesProperties filesProperties;
+    private final UserService userService;
 
     @GetMapping("/config")
-    public UploadConfigRs getConfig() {
+    public UploadConfigRs getConfig(@AuthenticationPrincipal AuthUser user) {
         FilesProperties.Uploads uploads = filesProperties.getUploads();
+        UserEntity account = userService.get(user.id());
         return new UploadConfigRs(
                 uploads.getChunkSize().toBytes(),
                 uploads.getMaxTotalSize().toBytes(),
@@ -73,25 +79,26 @@ public class FileUploadController {
                         UploadCrypto.VERSION,
                         UploadCrypto.KDF,
                         uploadCrypto.kdfIterations(),
-                        uploadCrypto.kdfSalt(),
+                        account.getUploadKdfSalt(),
                         UploadCrypto.HKDF,
                         UploadCrypto.HKDF_INFO,
                         UploadCrypto.CIPHER_NAME,
                         UploadCrypto.KEY_SALT_LENGTH,
                         UploadCrypto.IV_LENGTH,
-                        UploadCrypto.TAG_LENGTH
+                        UploadCrypto.TAG_LENGTH,
+                        account.getUploadKey() != null
                 )
         );
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public CreateUploadRs create(@RequestBody CreateUploadRq rq) {
+    public CreateUploadRs create(@AuthenticationPrincipal AuthUser user, @RequestBody CreateUploadRq rq) {
         if (rq.version() == null || rq.version() != UploadCrypto.VERSION) {
             throw new InvalidFileException(VERSION_INVALID.formatted(UploadCrypto.VERSION));
         }
         byte[] keySalt = Base64Content.decodeField(rq.keySalt(), KEY_SALT_FIELD);
-        UploadSessionState state = uploadSessionService.create(keySalt, payload(rq.iv(), rq.data(),
+        UploadSessionState state = uploadSessionService.create(user.id(), keySalt, payload(rq.iv(), rq.data(),
                 StringUtils.EMPTY));
         return new CreateUploadRs(
                 state.session().id(),
@@ -106,18 +113,20 @@ public class FileUploadController {
     @PutMapping("/{uploadId}/files/{fileIndex}/chunks/{chunkIndex}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void uploadChunk(
+            @AuthenticationPrincipal AuthUser user,
             @PathVariable UUID uploadId,
             @PathVariable int fileIndex,
             @PathVariable int chunkIndex,
             @RequestBody UploadChunkRq rq
     ) {
-        uploadSessionService.putChunk(uploadId, new EncryptedChunk(fileIndex, chunkIndex,
+        uploadSessionService.putChunk(user.id(), uploadId, new EncryptedChunk(fileIndex, chunkIndex,
                 payload(rq.iv(), rq.data(), StringUtils.EMPTY)));
     }
 
     @PostMapping("/{uploadId}/chunks")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void uploadChunks(@PathVariable UUID uploadId, @RequestBody UploadChunksRq rq) {
+    public void uploadChunks(@AuthenticationPrincipal AuthUser user, @PathVariable UUID uploadId,
+                             @RequestBody UploadChunksRq rq) {
         if (rq.chunks() == null) {
             throw new InvalidFileException(CHUNKS_EMPTY);
         }
@@ -130,12 +139,12 @@ public class FileUploadController {
             }
             chunks.add(new EncryptedChunk(item.fileIndex(), item.chunkIndex(), payload(item.iv(), item.data(), prefix)));
         }
-        uploadSessionService.putChunks(uploadId, chunks);
+        uploadSessionService.putChunks(user.id(), uploadId, chunks);
     }
 
     @GetMapping("/{uploadId}")
-    public UploadStatusRs getStatus(@PathVariable UUID uploadId) {
-        UploadSessionState state = uploadSessionService.getStatus(uploadId);
+    public UploadStatusRs getStatus(@AuthenticationPrincipal AuthUser user, @PathVariable UUID uploadId) {
+        UploadSessionState state = uploadSessionService.getStatus(user.id(), uploadId);
         List<UploadSessionFileStatusRs> files = state.files().stream()
                 .map(file -> new UploadSessionFileStatusRs(
                         file.index(),
@@ -157,14 +166,16 @@ public class FileUploadController {
 
     @PostMapping("/{uploadId}/complete")
     @ResponseStatus(HttpStatus.CREATED)
-    public FileRs complete(@PathVariable UUID uploadId, @RequestHeader(PROOF_HEADER) String proof) {
-        return FileRs.from(uploadSessionService.complete(uploadId, parseProof(proof)));
+    public FileRs complete(@AuthenticationPrincipal AuthUser user, @PathVariable UUID uploadId,
+                           @RequestHeader(PROOF_HEADER) String proof) {
+        return FileRs.from(uploadSessionService.complete(user.id(), uploadId, parseProof(proof)));
     }
 
     @DeleteMapping("/{uploadId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void cancel(@PathVariable UUID uploadId, @RequestHeader(PROOF_HEADER) String proof) {
-        uploadSessionService.cancel(uploadId, parseProof(proof));
+    public void cancel(@AuthenticationPrincipal AuthUser user, @PathVariable UUID uploadId,
+                       @RequestHeader(PROOF_HEADER) String proof) {
+        uploadSessionService.cancel(user.id(), uploadId, parseProof(proof));
     }
 
     private static EncryptedPayload payload(String iv, String data, String fieldPrefix) {

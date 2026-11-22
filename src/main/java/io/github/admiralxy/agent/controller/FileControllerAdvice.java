@@ -60,7 +60,8 @@ public class FileControllerAdvice {
 
     @ExceptionHandler(UploadDecryptionException.class)
     public ProblemDetail handleDecryption(UploadDecryptionException e) {
-        return problem(HttpStatus.UNAUTHORIZED, e.getMessage());
+        // 401 means a missing or expired session; a wrong upload password is a 403
+        return problem(HttpStatus.FORBIDDEN, e.getMessage());
     }
 
     @ExceptionHandler(MissingRequestHeaderException.class)

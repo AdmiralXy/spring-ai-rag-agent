@@ -11,18 +11,17 @@ import lombok.Setter;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.Instant;
+import java.util.UUID;
 
 @Entity
-@Table(name = "t_summarizer_model")
+@Table(name = "t_summarizer_models")
 @Getter
 @Setter
 public class SummarizerModelEntity {
 
-    public static final short SINGLETON_ID = 1;
-
     @Id
-    @Column(name = "c_id", nullable = false)
-    private Short id = SINGLETON_ID;
+    @Column(name = "c_user_id", nullable = false, updatable = false)
+    private UUID userId;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "c_provider", nullable = false)

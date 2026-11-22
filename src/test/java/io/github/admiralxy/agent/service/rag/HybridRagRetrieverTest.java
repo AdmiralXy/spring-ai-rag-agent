@@ -1,12 +1,15 @@
 package io.github.admiralxy.agent.service.rag;
 
 import io.github.admiralxy.agent.domain.RagSearchHit;
+import io.github.admiralxy.agent.entity.EmbeddingModelEntity;
 import io.github.admiralxy.agent.repository.RagDocumentRepository;
+import io.github.admiralxy.agent.service.model.EmbeddingModelRuntime.Embedder;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.embedding.EmbeddingModel;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
@@ -20,7 +23,7 @@ class HybridRagRetrieverTest {
 
     private final RagDocumentRepository repository = mock(RagDocumentRepository.class);
     private final EmbeddingModel embeddingModel = mock(EmbeddingModel.class);
-    private final HybridRagRetriever retriever = new HybridRagRetriever(repository, embeddingModel);
+    private final HybridRagRetriever retriever = new HybridRagRetriever(repository);
 
     @Test
     void tsQueryKeepsMeaningfulWordsAsPrefixOrQuery() {
@@ -36,15 +39,18 @@ class HybridRagRetrieverTest {
     }
 
     @Test
-    void fusesVectorAndKeywordRankings() {
+    void fusesVectorAndKeywordRankingsInTheDimensionOfTheModel() {
         RagSearchHit a = hit("a");
         RagSearchHit b = hit("b");
         RagSearchHit c = hit("c");
+        EmbeddingModelEntity settings = new EmbeddingModelEntity();
+        settings.setDimensions(1);
         when(embeddingModel.embed(anyString())).thenReturn(new float[]{1f});
-        when(repository.vectorSearch(any(), any(), anyInt())).thenReturn(List.of(a, b));
+        when(repository.vectorSearch(any(), eq(1), any(), anyInt())).thenReturn(List.of(a, b));
         when(repository.keywordSearch(any(), eq("retrypolicy:*"), anyInt())).thenReturn(List.of(c, b));
 
-        List<RagSearchHit> ranked = retriever.search(List.of("s"), "RetryPolicy", null, 10, 0.6);
+        List<RagSearchHit> ranked = retriever.search(new Embedder(settings, embeddingModel),
+                List.of(UUID.randomUUID()), "RetryPolicy", null, 10, 0.6);
 
         assertEquals(List.of("b", "a", "c"), ranked.stream().map(RagSearchHit::id).toList());
     }

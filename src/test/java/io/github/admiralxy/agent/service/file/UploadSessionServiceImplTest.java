@@ -1,13 +1,13 @@
 package io.github.admiralxy.agent.service.file;
 
 import io.airlift.compress.v3.zstd.ZstdJavaInputStream;
-import io.github.admiralxy.agent.config.properties.AdminProperties;
 import io.github.admiralxy.agent.config.properties.FilesProperties;
 import io.github.admiralxy.agent.domain.StoredFile;
 import io.github.admiralxy.agent.domain.UploadSessionFile;
 import io.github.admiralxy.agent.domain.UploadSessionState;
 import io.github.admiralxy.agent.domain.UploadSessionStatus;
 import io.github.admiralxy.agent.entity.StoredFileEntity;
+import io.github.admiralxy.agent.entity.UserEntity;
 import io.github.admiralxy.agent.exception.InvalidFileException;
 import io.github.admiralxy.agent.exception.LimitExceededException;
 import io.github.admiralxy.agent.exception.UploadConflictException;
@@ -15,6 +15,7 @@ import io.github.admiralxy.agent.exception.UploadDecryptionException;
 import io.github.admiralxy.agent.exception.UploadExpiredException;
 import io.github.admiralxy.agent.exception.UploadNotFoundException;
 import io.github.admiralxy.agent.repository.StoredFileRepository;
+import io.github.admiralxy.agent.repository.UserRepository;
 import io.github.admiralxy.agent.service.file.FileContentStore;
 import io.github.admiralxy.agent.service.file.FileStorageServiceImpl;
 import io.github.admiralxy.agent.service.file.UploadChunkStore;
@@ -43,6 +44,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -64,6 +66,8 @@ class UploadSessionServiceImplTest {
     private static final int CHUNK_SIZE = 4;
     private static final Duration TTL = Duration.ofHours(1);
     private static final String PASSWORD = "test-upload-password";
+    private static final UUID USER = UUID.randomUUID();
+    private static final byte[] MASTER = masterKey(PASSWORD);
 
     @TempDir
     Path tempDir;
@@ -72,6 +76,7 @@ class UploadSessionServiceImplTest {
     private final JsonMapper jsonMapper = JsonMapper.builder().build();
     private final InMemoryUploadSessionStore store = new InMemoryUploadSessionStore();
     private final StoredFileRepository fileRepository = Mockito.mock(StoredFileRepository.class);
+    private final UserRepository userRepository = Mockito.mock(UserRepository.class);
     private final MutableClock clock = new MutableClock(Instant.parse("2026-11-19T10:00:00Z"));
     private final Map<UUID, byte[]> keySalts = new ConcurrentHashMap<>();
     private FileContentStore contentStore;
@@ -84,7 +89,11 @@ class UploadSessionServiceImplTest {
         FilesProperties properties = properties();
         uploadsDir = tempDir.resolve("uploads");
         contentStore = new FileContentStore(properties);
-        crypto = new UploadCrypto(properties, admin(PASSWORD));
+        crypto = new UploadCrypto(properties);
+        UserEntity user = new UserEntity();
+        user.setId(USER);
+        user.setUploadKey(MASTER);
+        when(userRepository.findById(USER)).thenReturn(Optional.of(user));
         FileStorageServiceImpl fileStorageService = new FileStorageServiceImpl(fileRepository, contentStore, properties);
         when(fileRepository.save(any())).thenAnswer(inv -> {
             StoredFileEntity entity = inv.getArgument(0);
@@ -92,14 +101,11 @@ class UploadSessionServiceImplTest {
             return entity;
         });
         service = new UploadSessionServiceImpl(store, new UploadChunkStore(properties), crypto, fileStorageService,
-                jsonMapper, new NoOpTransactionManager(), clock, properties);
+                userRepository, jsonMapper, new NoOpTransactionManager(), clock, properties);
     }
 
-    private static AdminProperties admin(String password) {
-        AdminProperties admin = new AdminProperties();
-        admin.setPassword(password);
-        admin.afterPropertiesSet();
-        return admin;
+    private static byte[] masterKey(String password) {
+        return UploadCrypto.pbkdf2(password, "user-salt".getBytes(StandardCharsets.UTF_8), 1000);
     }
 
     private FilesProperties properties() {
@@ -146,7 +152,7 @@ class UploadSessionServiceImplTest {
         assertTrue(hasZstdMagic(archive));
         assertTrue(hasNeutralOwnership(archive));
 
-        assertThrows(UploadNotFoundException.class, () -> service.getStatus(state.session().id()));
+        assertThrows(UploadNotFoundException.class, () -> service.getStatus(USER, state.session().id()));
         assertFalse(Files.exists(uploadsDir.resolve(state.session().id().toString())));
     }
 
@@ -165,7 +171,7 @@ class UploadSessionServiceImplTest {
         for (int i = 0; i < 30; i++) {
             batch.add(chunk(id, i, 0, contents.get(i)));
         }
-        service.putChunks(id, batch);
+        service.putChunks(USER, id, batch);
         for (int c = 0; c < 3; c++) {
             put(id, 30, c, slice(contents.get(30), c));
         }
@@ -182,16 +188,16 @@ class UploadSessionServiceImplTest {
         files.put("b.txt", bytes("cd"));
         UUID id = create("a", files).session().id();
 
-        InvalidFileException e = assertThrows(InvalidFileException.class, () -> service.putChunks(id, List.of(
+        InvalidFileException e = assertThrows(InvalidFileException.class, () -> service.putChunks(USER, id, List.of(
                 chunk(id, 0, 0, bytes("ab")),
                 chunk(id, 1, 0, bytes("cde")))));
         assertTrue(e.getMessage().startsWith("chunks[1]: "), e.getMessage());
 
-        assertThrows(UploadDecryptionException.class, () -> service.putChunks(id, List.of(
+        assertThrows(UploadDecryptionException.class, () -> service.putChunks(USER, id, List.of(
                 chunk(id, 0, 0, bytes("ab")),
                 new EncryptedChunk(1, 0, chunk(id, 0, 0, bytes("cd")).payload()))));
 
-        assertTrue(service.getStatus(id).receivedChunks().isEmpty());
+        assertTrue(service.getStatus(USER, id).receivedChunks().isEmpty());
     }
 
     @Test
@@ -199,9 +205,9 @@ class UploadSessionServiceImplTest {
         UUID id = create("a", Map.of("a.txt", bytes("ab"))).session().id();
         EncryptedChunk chunk = chunk(id, 0, 0, bytes("ab"));
 
-        assertThrows(InvalidFileException.class, () -> service.putChunks(id, List.of()));
-        assertThrows(InvalidFileException.class, () -> service.putChunks(id, List.of(chunk, chunk)));
-        assertThrows(LimitExceededException.class, () -> service.putChunks(id, Collections.nCopies(51, chunk)));
+        assertThrows(InvalidFileException.class, () -> service.putChunks(USER, id, List.of()));
+        assertThrows(InvalidFileException.class, () -> service.putChunks(USER, id, List.of(chunk, chunk)));
+        assertThrows(LimitExceededException.class, () -> service.putChunks(USER, id, Collections.nCopies(51, chunk)));
     }
 
     @Test
@@ -225,18 +231,17 @@ class UploadSessionServiceImplTest {
         InvalidFileException shortChunk = assertThrows(InvalidFileException.class, () -> put(id, 0, 0, bytes("abc")));
         assertEquals("Chunk 0 of file 0 must be 4 bytes before encryption, got 3", shortChunk.getMessage());
         assertThrows(InvalidFileException.class, () -> put(id, 0, 1, bytes("efg")));
-        assertTrue(service.getStatus(id).receivedChunks().isEmpty());
+        assertTrue(service.getStatus(USER, id).receivedChunks().isEmpty());
     }
 
     @Test
     void wrongPasswordIsRejectedOnCreate() {
-        UploadCrypto otherCrypto = new UploadCrypto(properties(), admin("another-upload-password"));
         byte[] keySalt = randomBytes(UploadCrypto.KEY_SALT_LENGTH);
         byte[] iv = randomBytes(UploadCrypto.IV_LENGTH);
         byte[] manifest = jsonMapper.writeValueAsBytes(new UploadManifest("a", List.of(new UploadFileSpec("a.txt", 1L))));
-        byte[] data = otherCrypto.encrypt(keySalt, iv, manifest, UploadCrypto.createAad());
+        byte[] data = crypto.encrypt(masterKey("another-upload-password"), keySalt, iv, manifest, UploadCrypto.createAad());
 
-        assertThrows(UploadDecryptionException.class, () -> service.create(keySalt, new EncryptedPayload(iv, data)));
+        assertThrows(UploadDecryptionException.class, () -> service.create(USER, keySalt, new EncryptedPayload(iv, data)));
     }
 
     @Test
@@ -248,8 +253,8 @@ class UploadSessionServiceImplTest {
         UUID other = create("b", files).session().id();
 
         EncryptedPayload forFile0 = chunk(id, 0, 0, bytes("cd")).payload();
-        assertThrows(UploadDecryptionException.class, () -> service.putChunk(id, new EncryptedChunk(1, 0, forFile0)));
-        assertThrows(UploadDecryptionException.class, () -> service.putChunk(other, new EncryptedChunk(0, 0, forFile0)));
+        assertThrows(UploadDecryptionException.class, () -> service.putChunk(USER, id, new EncryptedChunk(1, 0, forFile0)));
+        assertThrows(UploadDecryptionException.class, () -> service.putChunk(USER, other, new EncryptedChunk(0, 0, forFile0)));
     }
 
     @Test
@@ -257,9 +262,9 @@ class UploadSessionServiceImplTest {
         UUID id = create("a", Map.of("a.txt", new byte[0])).session().id();
         UUID other = create("b", Map.of("b.txt", new byte[0])).session().id();
 
-        assertThrows(UploadDecryptionException.class, () -> service.complete(id, proof(id, "cancel")));
-        assertThrows(UploadDecryptionException.class, () -> service.complete(id, proof(other, "complete")));
-        assertThrows(UploadDecryptionException.class, () -> service.cancel(id, proof(id, "complete")));
+        assertThrows(UploadDecryptionException.class, () -> service.complete(USER, id, proof(id, "cancel")));
+        assertThrows(UploadDecryptionException.class, () -> service.complete(USER, id, proof(other, "complete")));
+        assertThrows(UploadDecryptionException.class, () -> service.cancel(USER, id, proof(id, "complete")));
         assertTrue(store.exists(id));
 
         complete(id);
@@ -287,7 +292,7 @@ class UploadSessionServiceImplTest {
         put(id, 0, 2, new byte[2]);
         put(id, 0, 0, new byte[4]);
 
-        UploadSessionState status = service.getStatus(id);
+        UploadSessionState status = service.getStatus(USER, id);
 
         assertEquals(List.of(0, 2), List.copyOf(status.receivedChunks().get(0)));
     }
@@ -330,8 +335,8 @@ class UploadSessionServiceImplTest {
         assertThrows(InvalidFileException.class, () -> createRaw("../a", List.of(new UploadFileSpec("a.txt", 1L))));
         byte[] keySalt = randomBytes(UploadCrypto.KEY_SALT_LENGTH);
         byte[] iv = randomBytes(UploadCrypto.IV_LENGTH);
-        byte[] notJson = crypto.encrypt(keySalt, iv, bytes("not json"), UploadCrypto.createAad());
-        assertThrows(InvalidFileException.class, () -> service.create(keySalt, new EncryptedPayload(iv, notJson)));
+        byte[] notJson = crypto.encrypt(MASTER, keySalt, iv, bytes("not json"), UploadCrypto.createAad());
+        assertThrows(InvalidFileException.class, () -> service.create(USER, keySalt, new EncryptedPayload(iv, notJson)));
     }
 
     @Test
@@ -354,11 +359,11 @@ class UploadSessionServiceImplTest {
         UUID id = create("a", files).session().id();
         EncryptedPayload any = chunk(id, 0, 0, bytes("ab")).payload();
 
-        assertThrows(UploadNotFoundException.class, () -> service.putChunk(UUID.randomUUID(), new EncryptedChunk(0, 0, any)));
-        assertThrows(UploadNotFoundException.class, () -> service.putChunk(id, new EncryptedChunk(5, 0, any)));
-        assertThrows(UploadNotFoundException.class, () -> service.putChunk(id, new EncryptedChunk(0, 1, any)));
-        assertThrows(UploadNotFoundException.class, () -> service.putChunk(id, new EncryptedChunk(0, -1, any)));
-        assertThrows(UploadNotFoundException.class, () -> service.putChunk(id, new EncryptedChunk(1, 0, any)));
+        assertThrows(UploadNotFoundException.class, () -> service.putChunk(USER, UUID.randomUUID(), new EncryptedChunk(0, 0, any)));
+        assertThrows(UploadNotFoundException.class, () -> service.putChunk(USER, id, new EncryptedChunk(5, 0, any)));
+        assertThrows(UploadNotFoundException.class, () -> service.putChunk(USER, id, new EncryptedChunk(0, 1, any)));
+        assertThrows(UploadNotFoundException.class, () -> service.putChunk(USER, id, new EncryptedChunk(0, -1, any)));
+        assertThrows(UploadNotFoundException.class, () -> service.putChunk(USER, id, new EncryptedChunk(1, 0, any)));
     }
 
     @Test
@@ -369,13 +374,13 @@ class UploadSessionServiceImplTest {
         clock.advance(TTL.plusSeconds(1));
 
         assertThrows(UploadExpiredException.class, () -> put(id, 0, 1, bytes("ef")));
-        assertThrows(UploadExpiredException.class, () -> service.getStatus(id));
+        assertThrows(UploadExpiredException.class, () -> service.getStatus(USER, id));
         assertThrows(UploadExpiredException.class, () -> complete(id));
         assertTrue(Files.exists(uploadsDir.resolve(id.toString())));
 
         assertEquals(1, service.cleanupExpired());
 
-        assertThrows(UploadNotFoundException.class, () -> service.getStatus(id));
+        assertThrows(UploadNotFoundException.class, () -> service.getStatus(USER, id));
         assertFalse(Files.exists(uploadsDir.resolve(id.toString())));
     }
 
@@ -387,7 +392,7 @@ class UploadSessionServiceImplTest {
         put(id, 0, 0, bytes("abcd"));
         clock.advance(Duration.ofMinutes(50));
 
-        assertEquals(clock.instant().minus(Duration.ofMinutes(50)).plus(TTL), service.getStatus(id).session().expiresAt());
+        assertEquals(clock.instant().minus(Duration.ofMinutes(50)).plus(TTL), service.getStatus(USER, id).session().expiresAt());
         put(id, 0, 1, bytes("ef"));
         assertEquals(0, service.cleanupExpired());
         complete(id);
@@ -450,11 +455,11 @@ class UploadSessionServiceImplTest {
             for (int chunk = 0; chunk < file.chunkCount(); chunk++) {
                 EncryptedChunk encrypted = chunk(id, file.index(), chunk, slice(contents.get(file.index()), chunk));
                 fileChunks.add(encrypted);
-                tasks.add(() -> service.putChunk(id, encrypted));
+                tasks.add(() -> service.putChunk(USER, id, encrypted));
             }
             for (int from = 0; from < fileChunks.size(); from += 10) {
                 List<EncryptedChunk> batch = fileChunks.subList(from, Math.min(fileChunks.size(), from + 10));
-                tasks.add(() -> service.putChunks(id, batch));
+                tasks.add(() -> service.putChunks(USER, id, batch));
             }
         }
         Collections.shuffle(tasks, seeded);
@@ -484,33 +489,33 @@ class UploadSessionServiceImplTest {
         byte[] keySalt = randomBytes(UploadCrypto.KEY_SALT_LENGTH);
         byte[] iv = randomBytes(UploadCrypto.IV_LENGTH);
         byte[] manifest = jsonMapper.writeValueAsBytes(new UploadManifest(name, files));
-        byte[] data = crypto.encrypt(keySalt, iv, manifest, UploadCrypto.createAad());
-        UploadSessionState state = service.create(keySalt, new EncryptedPayload(iv, data));
+        byte[] data = crypto.encrypt(MASTER, keySalt, iv, manifest, UploadCrypto.createAad());
+        UploadSessionState state = service.create(USER, keySalt, new EncryptedPayload(iv, data));
         keySalts.put(state.session().id(), keySalt);
         return state;
     }
 
     private EncryptedChunk chunk(UUID id, int fileIndex, int chunkIndex, byte[] content) {
         byte[] iv = randomBytes(UploadCrypto.IV_LENGTH);
-        byte[] data = crypto.encrypt(keySalts.get(id), iv, content, UploadCrypto.chunkAad(id, fileIndex, chunkIndex));
+        byte[] data = crypto.encrypt(MASTER, keySalts.get(id), iv, content, UploadCrypto.chunkAad(id, fileIndex, chunkIndex));
         return new EncryptedChunk(fileIndex, chunkIndex, new EncryptedPayload(iv, data));
     }
 
     private void put(UUID id, int fileIndex, int chunkIndex, byte[] content) {
-        service.putChunk(id, chunk(id, fileIndex, chunkIndex, content));
+        service.putChunk(USER, id, chunk(id, fileIndex, chunkIndex, content));
     }
 
     private EncryptedPayload proof(UUID id, String action) {
         byte[] iv = randomBytes(UploadCrypto.IV_LENGTH);
-        return new EncryptedPayload(iv, crypto.encrypt(keySalts.get(id), iv, new byte[0], UploadCrypto.actionAad(action, id)));
+        return new EncryptedPayload(iv, crypto.encrypt(MASTER, keySalts.get(id), iv, new byte[0], UploadCrypto.actionAad(action, id)));
     }
 
     private StoredFile complete(UUID id) {
-        return service.complete(id, proof(id, "complete"));
+        return service.complete(USER, id, proof(id, "complete"));
     }
 
     private void cancel(UUID id) {
-        service.cancel(id, proof(id, "cancel"));
+        service.cancel(USER, id, proof(id, "cancel"));
     }
 
     private void sendAllOneByOne(UploadSessionState state, Map<String, byte[]> files, boolean reverse) {

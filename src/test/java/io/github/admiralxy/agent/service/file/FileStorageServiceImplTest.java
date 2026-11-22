@@ -34,11 +34,14 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class FileStorageServiceImplTest {
+
+    private static final UUID USER_ID = UUID.randomUUID();
 
     private static final byte[] HELLO = "hello".getBytes(StandardCharsets.UTF_8);
     private static final String HELLO_B64 = Base64.getEncoder().encodeToString(HELLO);
@@ -68,7 +71,7 @@ class FileStorageServiceImplTest {
             return e;
         });
 
-        StoredFile file = service.upload(" report ", ".PDF", HELLO_B64);
+        StoredFile file = service.upload(USER_ID, " report ", ".PDF", HELLO_B64);
 
         ArgumentCaptor<StoredFileEntity> captor = ArgumentCaptor.forClass(StoredFileEntity.class);
         verify(repository).save(captor.capture());
@@ -86,7 +89,7 @@ class FileStorageServiceImplTest {
     void uploadAcceptsDataUrl() {
         when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        StoredFile file = service.upload("note", "txt", "data:text/plain;base64," + HELLO_B64);
+        StoredFile file = service.upload(USER_ID, "note", "txt", "data:text/plain;base64," + HELLO_B64);
 
         assertEquals(HELLO.length, file.size());
         assertEquals("text/plain", file.contentType());
@@ -96,30 +99,30 @@ class FileStorageServiceImplTest {
     void uploadFallsBackToOctetStreamForUnknownExtension() {
         when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        StoredFile file = service.upload("blob", "zzzunknown", HELLO_B64);
+        StoredFile file = service.upload(USER_ID, "blob", "zzzunknown", HELLO_B64);
 
         assertEquals("application/octet-stream", file.contentType());
     }
 
     @Test
     void uploadRejectsInvalidBase64() {
-        assertThrows(InvalidFileException.class, () -> service.upload("a", "txt", "%%%not-base64%%%"));
+        assertThrows(InvalidFileException.class, () -> service.upload(USER_ID, "a", "txt", "%%%not-base64%%%"));
         verify(repository, never()).save(any());
     }
 
     @Test
     void uploadRejectsBadNameAndExtension() {
-        assertThrows(InvalidFileException.class, () -> service.upload(" ", "txt", HELLO_B64));
-        assertThrows(InvalidFileException.class, () -> service.upload("../etc", "txt", HELLO_B64));
-        assertThrows(InvalidFileException.class, () -> service.upload("a", "tar.gz", HELLO_B64));
-        assertThrows(InvalidFileException.class, () -> service.upload("a", null, HELLO_B64));
+        assertThrows(InvalidFileException.class, () -> service.upload(USER_ID, " ", "txt", HELLO_B64));
+        assertThrows(InvalidFileException.class, () -> service.upload(USER_ID, "../etc", "txt", HELLO_B64));
+        assertThrows(InvalidFileException.class, () -> service.upload(USER_ID, "a", "tar.gz", HELLO_B64));
+        assertThrows(InvalidFileException.class, () -> service.upload(USER_ID, "a", null, HELLO_B64));
     }
 
     @Test
     void uploadRejectsTooLargeFile() {
         String big = Base64.getEncoder().encodeToString(new byte[11]);
 
-        assertThrows(FileTooLargeException.class, () -> service.upload("a", "bin", big));
+        assertThrows(FileTooLargeException.class, () -> service.upload(USER_ID, "a", "bin", big));
     }
 
     @Test
@@ -129,7 +132,7 @@ class FileStorageServiceImplTest {
         byte[] body = new byte[100];
         Files.write(archive, body);
 
-        StoredFile file = service.storeArchive("Проект", archive);
+        StoredFile file = service.storeArchive(USER_ID, "Проект", archive);
 
         ArgumentCaptor<StoredFileEntity> captor = ArgumentCaptor.forClass(StoredFileEntity.class);
         verify(repository).save(captor.capture());
@@ -144,12 +147,12 @@ class FileStorageServiceImplTest {
 
     @Test
     void getAllSortsNewestFirst() {
-        when(repository.findAllMetadata(any())).thenReturn(Page.empty());
+        when(repository.findAllMetadata(any(), any())).thenReturn(Page.empty());
 
-        service.getAll(2, 50);
+        service.getAll(USER_ID, 2, 50);
 
         ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
-        verify(repository).findAllMetadata(captor.capture());
+        verify(repository).findAllMetadata(eq(USER_ID), captor.capture());
         assertEquals(2, captor.getValue().getPageNumber());
         assertEquals(50, captor.getValue().getPageSize());
         assertEquals(Sort.Direction.DESC, captor.getValue().getSort().getOrderFor("createdAt").getDirection());
@@ -157,17 +160,17 @@ class FileStorageServiceImplTest {
 
     @Test
     void getAllRejectsInvalidPaging() {
-        assertThrows(InvalidFileException.class, () -> service.getAll(-1, 20));
-        assertThrows(InvalidFileException.class, () -> service.getAll(0, 0));
-        assertThrows(InvalidFileException.class, () -> service.getAll(0, 101));
+        assertThrows(InvalidFileException.class, () -> service.getAll(USER_ID, -1, 20));
+        assertThrows(InvalidFileException.class, () -> service.getAll(USER_ID, 0, 0));
+        assertThrows(InvalidFileException.class, () -> service.getAll(USER_ID, 0, 101));
     }
 
     @Test
     void downloadReturnsInlineContent() throws Exception {
         UUID id = UUID.randomUUID();
-        when(repository.findById(id)).thenReturn(Optional.of(entity(id, HELLO, null)));
+        when(repository.findByIdAndUserId(id, USER_ID)).thenReturn(Optional.of(entity(id, HELLO, null)));
 
-        StoredFileContent content = service.download(id);
+        StoredFileContent content = service.download(USER_ID, id);
 
         assertArrayEquals(HELLO, content.content().getContentAsByteArray());
         assertEquals("report.pdf", content.file().fileName());
@@ -179,9 +182,9 @@ class FileStorageServiceImplTest {
         Path source = tempDir.resolve("src.bin");
         Files.write(source, HELLO);
         String key = contentStore.importFile(source);
-        when(repository.findById(id)).thenReturn(Optional.of(entity(id, null, key)));
+        when(repository.findByIdAndUserId(id, USER_ID)).thenReturn(Optional.of(entity(id, null, key)));
 
-        StoredFileContent content = service.download(id);
+        StoredFileContent content = service.download(USER_ID, id);
 
         assertTrue(content.content().isFile());
         assertArrayEquals(HELLO, content.content().getContentAsByteArray());
@@ -190,28 +193,28 @@ class FileStorageServiceImplTest {
     @Test
     void downloadThrowsWhenMissing() {
         UUID id = UUID.randomUUID();
-        when(repository.findById(id)).thenReturn(Optional.empty());
+        when(repository.findByIdAndUserId(id, USER_ID)).thenReturn(Optional.empty());
 
-        assertThrows(StoredFileNotFoundException.class, () -> service.download(id));
+        assertThrows(StoredFileNotFoundException.class, () -> service.download(USER_ID, id));
     }
 
     @Test
     void deleteThrowsWhenMissing() {
         UUID id = UUID.randomUUID();
-        when(repository.findStorageRef(id)).thenReturn(Optional.empty());
+        when(repository.findStorageRef(id, USER_ID)).thenReturn(Optional.empty());
 
-        assertThrows(StoredFileNotFoundException.class, () -> service.delete(id));
+        assertThrows(StoredFileNotFoundException.class, () -> service.delete(USER_ID, id));
     }
 
     @Test
     void deleteRemovesInlineFile() {
         UUID id = UUID.randomUUID();
-        when(repository.findStorageRef(id)).thenReturn(Optional.of(new StoredFileStorageRef(id, null)));
-        when(repository.deleteByIdDirectly(id)).thenReturn(1);
+        when(repository.findStorageRef(id, USER_ID)).thenReturn(Optional.of(new StoredFileStorageRef(id, null)));
+        when(repository.deleteByIdDirectly(id, USER_ID)).thenReturn(1);
 
-        service.delete(id);
+        service.delete(USER_ID, id);
 
-        verify(repository).deleteByIdDirectly(id);
+        verify(repository).deleteByIdDirectly(id, USER_ID);
     }
 
     @Test
@@ -220,10 +223,10 @@ class FileStorageServiceImplTest {
         Path source = tempDir.resolve("src.bin");
         Files.write(source, HELLO);
         String key = contentStore.importFile(source);
-        when(repository.findStorageRef(id)).thenReturn(Optional.of(new StoredFileStorageRef(id, key)));
-        when(repository.deleteByIdDirectly(id)).thenReturn(1);
+        when(repository.findStorageRef(id, USER_ID)).thenReturn(Optional.of(new StoredFileStorageRef(id, key)));
+        when(repository.deleteByIdDirectly(id, USER_ID)).thenReturn(1);
 
-        service.delete(id);
+        service.delete(USER_ID, id);
 
         assertFalse(Files.exists(contentStore.resolve(key)));
     }

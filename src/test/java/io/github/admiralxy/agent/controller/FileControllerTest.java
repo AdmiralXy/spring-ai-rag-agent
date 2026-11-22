@@ -5,6 +5,7 @@ import io.github.admiralxy.agent.controller.response.file.FileRs;
 import io.github.admiralxy.agent.controller.response.file.GetFilesRs;
 import io.github.admiralxy.agent.domain.StoredFile;
 import io.github.admiralxy.agent.domain.StoredFileContent;
+import io.github.admiralxy.agent.security.AuthUser;
 import io.github.admiralxy.agent.service.file.FileStorageService;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -28,6 +29,9 @@ import static org.mockito.Mockito.verify;
 
 class FileControllerTest {
 
+    private static final UUID USER_ID = UUID.randomUUID();
+    private static final AuthUser USER = new AuthUser(USER_ID, "user@example.com", "hash");
+
     private final FileStorageService fileStorageService = Mockito.mock(FileStorageService.class);
     private final FileController fileController = new FileController(fileStorageService);
 
@@ -36,10 +40,10 @@ class FileControllerTest {
         UUID id = UUID.randomUUID();
         Instant now = Instant.now();
         UploadFileRq rq = new UploadFileRq("report", "pdf", "aGVsbG8=");
-        Mockito.when(fileStorageService.upload("report", "pdf", "aGVsbG8="))
+        Mockito.when(fileStorageService.upload(USER_ID, "report", "pdf", "aGVsbG8="))
                 .thenReturn(new StoredFile(id, "report", "pdf", "application/pdf", 5, now));
 
-        FileRs rs = fileController.upload(rq);
+        FileRs rs = fileController.upload(USER, rq);
 
         assertEquals(id, rs.id());
         assertEquals("report.pdf", rs.fileName());
@@ -53,9 +57,9 @@ class FileControllerTest {
         UUID id = UUID.randomUUID();
         byte[] bytes = "hello".getBytes(StandardCharsets.UTF_8);
         StoredFile file = new StoredFile(id, "отчёт", "pdf", "application/pdf", bytes.length, Instant.now());
-        Mockito.when(fileStorageService.download(id)).thenReturn(new StoredFileContent(file, new ByteArrayResource(bytes)));
+        Mockito.when(fileStorageService.download(USER_ID, id)).thenReturn(new StoredFileContent(file, new ByteArrayResource(bytes)));
 
-        ResponseEntity<Resource> rs = fileController.download(id);
+        ResponseEntity<Resource> rs = fileController.download(USER, id);
 
         assertArrayEquals(bytes, rs.getBody().getContentAsByteArray());
         assertEquals(MediaType.APPLICATION_PDF, rs.getHeaders().getContentType());
@@ -68,10 +72,10 @@ class FileControllerTest {
     void getAllReturnsPageOfMetadata() {
         UUID id = UUID.randomUUID();
         StoredFile file = new StoredFile(id, "report", "pdf", "application/pdf", 5, Instant.now());
-        Mockito.when(fileStorageService.getAll(0, 20))
+        Mockito.when(fileStorageService.getAll(USER_ID, 0, 20))
                 .thenReturn(new PageImpl<>(List.of(file), PageRequest.of(0, 20), 1));
 
-        GetFilesRs rs = fileController.getAll(0, 20);
+        GetFilesRs rs = fileController.getAll(USER, 0, 20);
 
         assertEquals(1, rs.files().getTotalElements());
         assertEquals(id, rs.files().getContent().getFirst().id());
@@ -82,8 +86,8 @@ class FileControllerTest {
     void deleteDelegatesToService() {
         UUID id = UUID.randomUUID();
 
-        fileController.delete(id);
+        fileController.delete(USER, id);
 
-        verify(fileStorageService).delete(id);
+        verify(fileStorageService).delete(USER_ID, id);
     }
 }

@@ -12,6 +12,14 @@ databaseChangeLog:
                   constraints:
                     primaryKey: true
               - column:
+                  name: c_user_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_prompt_templates_users
+                    references: t_users(c_id)
+                    deleteCascade: true
+              - column:
                   name: c_name
                   type: text
                   constraints:
@@ -21,3 +29,17 @@ databaseChangeLog:
                   type: text
                   constraints:
                     nullable: false
+              - column:
+                  name: c_created_at
+                  type: timestamptz
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - createIndex:
+            tableName: t_prompt_templates
+            indexName: idx_prompt_templates_user
+            columns:
+              - column:
+                  name: c_user_id
+              - column:
+                  name: c_created_at

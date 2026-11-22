@@ -63,7 +63,7 @@ public class AgentAnswerStreamer implements AnswerStreamer {
     @Override
     public Flux<ServerSentEvent<String>> stream(AnswerRequest request) {
         ChatModelEntity model = request.model();
-        String context = ragService.buildContext(request.spaceIds(), request.text(), request.previousQuestion(),
+        String context = ragService.buildContext(request.userId(), request.spaceIds(), request.text(), request.previousQuestion(),
                 ContextBudget.of(model).agentRagTokens(ragProperties));
         List<Map<String, String>> history = sessionMemory.lastMessages(request.chatId(), chatProperties.getHistoryLimit())
                 .stream()
