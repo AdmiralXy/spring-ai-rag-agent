@@ -46,7 +46,7 @@ app:
   builtin-model:
     enabled: ${OSS_ENABLED:true}
     label: OSS
-    name: ${OSS_MODEL:deepseek-chat}
+    name: ${OSS_MODEL:deepseek-flash}
     base-url: ${OSS_BASE_URL:https://api.deepseek.com}
     api-key: ${OSS_API_KEY:replace-me}
     system-prompt: classpath:prompts/oss-system-prompt.md
