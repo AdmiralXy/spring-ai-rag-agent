@@ -3,14 +3,17 @@ package io.github.admiralxy.agent.service.provider.impl;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import io.github.admiralxy.agent.config.AiHttpClientBuilderFactory;
-import io.github.admiralxy.agent.controller.response.documents.ProviderType;
-import io.github.admiralxy.agent.service.TextChunkerService;
+import io.github.admiralxy.agent.config.properties.OutboundProperties;
+import io.github.admiralxy.agent.config.properties.RagProperties;
+import io.github.admiralxy.agent.domain.ProviderType;
 import io.github.admiralxy.agent.service.provider.RagChunk;
 import io.github.admiralxy.agent.service.provider.RagContentRequest;
 import io.github.admiralxy.agent.service.provider.RagProviderAuth;
+import io.github.admiralxy.agent.service.rag.TextChunkerService;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import reactor.test.StepVerifier;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -33,14 +36,14 @@ class ConfluenceRagContentProviderTest {
 
     @Test
     void supportsConfluenceOnly() {
-        ConfluenceRagContentProvider provider = new ConfluenceRagContentProvider(noOpChunker(), clientFactory());
+        ConfluenceRagContentProvider provider = provider();
         assertTrue(provider.supports(ProviderType.CONFLUENCE));
         assertFalse(provider.supports(ProviderType.TEXT));
     }
 
     @Test
     void resolveContentReturnsTitleAndStorageValue() throws IOException {
-        ConfluenceRagContentProvider provider = new ConfluenceRagContentProvider(noOpChunker(), clientFactory());
+        ConfluenceRagContentProvider provider = provider();
         AtomicReference<String> authorizationRef = new AtomicReference<>();
         HttpServer server = createServer(200, """
                 {
@@ -56,7 +59,7 @@ class ConfluenceRagContentProviderTest {
 
         try {
             StepVerifier.create(provider.resolveChunks(request(buildUrl(server), USERNAME, PASSWORD)))
-                    .expectNext(new RagChunk("Стенды\n\nКонтент", 0, 1))
+                    .expectNext(new RagChunk("Стенды\n\nКонтент", 0, 1, "Стенды", 0, 1))
                     .verifyComplete();
             assertEquals(expectedBasicAuth(), authorizationRef.get());
         } finally {
@@ -66,7 +69,7 @@ class ConfluenceRagContentProviderTest {
 
     @Test
     void resolveContentThrowsOnNonSuccessfulStatus() throws IOException {
-        ConfluenceRagContentProvider provider = new ConfluenceRagContentProvider(noOpChunker(), clientFactory());
+        ConfluenceRagContentProvider provider = provider();
         HttpServer server = createServer(500, "{}", null);
         server.start();
 
@@ -81,7 +84,7 @@ class ConfluenceRagContentProviderTest {
 
     @Test
     void resolveContentThrowsOnInvalidJson() throws IOException {
-        ConfluenceRagContentProvider provider = new ConfluenceRagContentProvider(noOpChunker(), clientFactory());
+        ConfluenceRagContentProvider provider = provider();
         HttpServer server = createServer(200, "not-json", null);
         server.start();
 
@@ -96,7 +99,7 @@ class ConfluenceRagContentProviderTest {
 
     @Test
     void resolveContentThrowsWhenCredentialsAreMissing() {
-        ConfluenceRagContentProvider provider = new ConfluenceRagContentProvider(noOpChunker(), clientFactory());
+        ConfluenceRagContentProvider provider = provider();
 
         StepVerifier.create(provider.resolveChunks(request("http://localhost:8080/pages/viewpage.action?pageId=1", "", "")))
                 .expectError(IllegalStateException.class)
@@ -142,6 +145,11 @@ class ConfluenceRagContentProviderTest {
     }
 
     private AiHttpClientBuilderFactory clientFactory() {
-        return new AiHttpClientBuilderFactory(false);
+        return new AiHttpClientBuilderFactory(new OutboundProperties());
+    }
+
+    private ConfluenceRagContentProvider provider() {
+        return new ConfluenceRagContentProvider(noOpChunker(), new RagProperties(), clientFactory(),
+                JsonMapper.builder().build());
     }
 }

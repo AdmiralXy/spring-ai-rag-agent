@@ -1,57 +1,42 @@
 package io.github.admiralxy.agent.service.model;
 
 import io.github.admiralxy.agent.config.AiHttpClientBuilderFactory;
-import io.github.admiralxy.agent.entity.EmbeddingsModelSettingsEntity;
-import io.github.admiralxy.agent.repository.EmbeddingsModelSettingsRepository;
+import io.github.admiralxy.agent.entity.EmbeddingModelEntity;
+import io.github.admiralxy.agent.repository.EmbeddingModelRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.ai.document.MetadataMode;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.openai.OpenAiEmbeddingModel;
 import org.springframework.ai.openai.OpenAiEmbeddingOptions;
-import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.stereotype.Component;
+
+import java.util.List;
 
 @Component
 @RequiredArgsConstructor
 public class EmbeddingModelRuntime {
 
-    private static final short SINGLETON_ID = 1;
+    private static final String SETTINGS_MISSING = "Embedding model settings are missing";
 
-    private final EmbeddingsModelSettingsRepository repository;
+    private final EmbeddingModelRepository repository;
     private final AiHttpClientBuilderFactory httpClientBuilderFactory;
 
-    private volatile String signature;
+    private volatile List<Object> signature;
     private volatile EmbeddingModel embeddingModel;
 
     public EmbeddingModel getOrCreateModel() {
-        EmbeddingsModelSettingsEntity settings = repository.findById(SINGLETON_ID)
-                .orElseThrow(() -> new IllegalStateException("Embeddings settings are missing"));
-
-        String currentSignature = buildSignature(settings);
-        EmbeddingModel cachedModel = embeddingModel;
-        if (cachedModel != null && currentSignature.equals(signature)) {
-            return cachedModel;
+        EmbeddingModelEntity settings = repository.findById(EmbeddingModelEntity.SINGLETON_ID)
+                .orElseThrow(() -> new IllegalStateException(SETTINGS_MISSING));
+        List<Object> current = signatureOf(settings);
+        EmbeddingModel cached = embeddingModel;
+        if (cached != null && current.equals(signature)) {
+            return cached;
         }
-
         synchronized (this) {
-            if (embeddingModel != null && currentSignature.equals(signature)) {
-                return embeddingModel;
+            if (embeddingModel == null || !current.equals(signature)) {
+                embeddingModel = create(settings);
+                signature = current;
             }
-
-            OpenAiApi api = OpenAiApi.builder()
-                    .baseUrl(settings.getBaseUrl())
-                    .apiKey(settings.getApiKey())
-                    .restClientBuilder(httpClientBuilderFactory.createRestClientBuilder())
-                    .webClientBuilder(httpClientBuilderFactory.createWebClientBuilder())
-                    .build();
-
-            OpenAiEmbeddingOptions options = OpenAiEmbeddingOptions.builder()
-                    .model(settings.getName())
-                    .dimensions(settings.getDimensions())
-                    .build();
-
-            embeddingModel = new OpenAiEmbeddingModel(api, MetadataMode.EMBED, options);
-            signature = currentSignature;
             return embeddingModel;
         }
     }
@@ -61,11 +46,22 @@ public class EmbeddingModelRuntime {
         signature = null;
     }
 
-    private String buildSignature(EmbeddingsModelSettingsEntity settings) {
-        return settings.getProvider()
-                + "|" + settings.getBaseUrl()
-                + "|" + settings.getApiKey()
-                + "|" + settings.getName()
-                + "|" + settings.getDimensions();
+    private EmbeddingModel create(EmbeddingModelEntity settings) {
+        OpenAiEmbeddingOptions options = OpenAiEmbeddingOptions.builder()
+                .dimensions(settings.getDimensions())
+                .baseUrl(OpenAiBaseUrls.normalize(settings.getBaseUrl()))
+                .apiKey(settings.getApiKey())
+                .model(settings.getName())
+                .build();
+        return OpenAiEmbeddingModel.builder()
+                .options(options)
+                .metadataMode(MetadataMode.NONE)
+                .httpClientBuilderCustomizer(httpClientBuilderFactory.openAiHttpClientCustomizer())
+                .build();
+    }
+
+    private static List<Object> signatureOf(EmbeddingModelEntity settings) {
+        return List.of(settings.getProvider(), settings.getBaseUrl(), settings.getApiKey(), settings.getName(),
+                settings.getDimensions());
     }
 }

@@ -11,13 +11,11 @@ import org.springframework.context.annotation.Configuration;
 @Setter
 public class ChatProperties {
 
-    /**
-     * History limit in messages.
-     */
-    private int historyLimit = 20;
+    private static final int DEFAULT_HISTORY_LIMIT = 20;
 
     /**
-     * RAG properties.
+     * Messages passed to the agent when it starts a new session. Regular models get as much history as fits
+     * into their context window.
      */
-    private RagProperties rag;
+    private int historyLimit = DEFAULT_HISTORY_LIMIT;
 }

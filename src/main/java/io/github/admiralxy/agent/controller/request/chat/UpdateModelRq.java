@@ -1,4 +1,6 @@
 package io.github.admiralxy.agent.controller.request.chat;
 
-public record UpdateModelRq(String modelId) {
+import java.util.UUID;
+
+public record UpdateModelRq(UUID modelId) {
 }

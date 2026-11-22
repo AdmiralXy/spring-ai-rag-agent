@@ -1,6 +1,6 @@
 package io.github.admiralxy.agent.controller;
 
-import io.github.admiralxy.agent.controller.response.chat.ModelInfoRs;
+import io.github.admiralxy.agent.controller.mapper.ModelSettingsMapper;
 import io.github.admiralxy.agent.controller.response.chat.ModelsListRs;
 import io.github.admiralxy.agent.service.model.ModelSettingsService;
 import lombok.RequiredArgsConstructor;
@@ -14,13 +14,10 @@ import org.springframework.web.bind.annotation.RestController;
 public class ModelsController {
 
     private final ModelSettingsService modelSettingsService;
+    private final ModelSettingsMapper mapper;
 
     @GetMapping
     public ModelsListRs getAll() {
-        var models = modelSettingsService.getChatModels().stream()
-                .map(model -> new ModelInfoRs(model.getLabel(), model.getId().toString()))
-                .toList();
-
-        return new ModelsListRs(models);
+        return new ModelsListRs(modelSettingsService.getChatModels().stream().map(mapper::toInfo).toList());
     }
 }

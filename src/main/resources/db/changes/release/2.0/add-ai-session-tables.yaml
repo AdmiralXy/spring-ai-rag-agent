@@ -1,0 +1,11 @@
+databaseChangeLog:
+  - changeSet:
+      id: add-ai-session-tables
+      author: AdmiralXy
+      comment: Spring AI session memory (spring-ai-session-jdbc schema for PostgreSQL, version 2.1.0)
+      changes:
+        - sqlFile:
+            path: db/changes/release/2.0/ai-session-schema.sql
+            splitStatements: true
+            endDelimiter: ;
+            stripComments: true

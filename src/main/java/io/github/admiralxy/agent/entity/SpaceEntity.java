@@ -21,16 +21,13 @@ public class SpaceEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
-    @Column(name = "c_id", updatable = false, nullable = false, columnDefinition = "uuid")
+    @Column(name = "c_id", updatable = false, nullable = false)
     private UUID id;
 
     @Column(name = "c_name", nullable = false)
     private String name;
 
-    @Column(name = "c_dimensions", nullable = false)
-    private int dimensions;
-
     @CreationTimestamp
-    @Column(name = "c_created_at", nullable = false)
+    @Column(name = "c_created_at", nullable = false, updatable = false)
     private Instant createdAt;
 }

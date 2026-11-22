@@ -16,35 +16,31 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
-/**
- * Error mapping for file endpoints. Errors are returned as RFC 9457 problem details.
- */
 @RestControllerAdvice(assignableTypes = {FileController.class, FileUploadController.class})
 public class FileControllerAdvice {
 
-    @ExceptionHandler(StoredFileNotFoundException.class)
-    public ProblemDetail handleNotFound(StoredFileNotFoundException e) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage());
-    }
+    private static final String NOT_JSON = "Request body is not valid JSON";
+    private static final String HEADER_REQUIRED = "Header '%s' is required";
+    private static final String PARAMETER_INVALID = "Parameter '%s' has invalid format";
 
-    @ExceptionHandler(UploadNotFoundException.class)
-    public ProblemDetail handleUploadNotFound(UploadNotFoundException e) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage());
+    @ExceptionHandler({StoredFileNotFoundException.class, UploadNotFoundException.class})
+    public ProblemDetail handleNotFound(RuntimeException e) {
+        return problem(HttpStatus.NOT_FOUND, e.getMessage());
     }
 
     @ExceptionHandler(UploadExpiredException.class)
     public ProblemDetail handleUploadExpired(UploadExpiredException e) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.GONE, e.getMessage());
+        return problem(HttpStatus.GONE, e.getMessage());
     }
 
     @ExceptionHandler(UploadConflictException.class)
     public ProblemDetail handleUploadConflict(UploadConflictException e) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, e.getMessage());
+        return problem(HttpStatus.CONFLICT, e.getMessage());
     }
 
     @ExceptionHandler(InvalidFileException.class)
     public ProblemDetail handleInvalid(InvalidFileException e) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, e.getMessage());
+        return problem(HttpStatus.BAD_REQUEST, e.getMessage());
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
@@ -54,31 +50,35 @@ public class FileControllerAdvice {
                 return handleRequestTooLarge(tooLarge);
             }
         }
-        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Request body is not valid JSON");
+        return problem(HttpStatus.BAD_REQUEST, NOT_JSON);
     }
 
     @ExceptionHandler(RequestTooLargeException.class)
     public ProblemDetail handleRequestTooLarge(RequestTooLargeException e) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.CONTENT_TOO_LARGE, e.getMessage());
+        return problem(HttpStatus.CONTENT_TOO_LARGE, e.getMessage());
     }
 
     @ExceptionHandler(UploadDecryptionException.class)
     public ProblemDetail handleDecryption(UploadDecryptionException e) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, e.getMessage());
+        return problem(HttpStatus.UNAUTHORIZED, e.getMessage());
     }
 
     @ExceptionHandler(MissingRequestHeaderException.class)
     public ProblemDetail handleMissingHeader(MissingRequestHeaderException e) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Header '" + e.getHeaderName() + "' is required");
+        return problem(HttpStatus.BAD_REQUEST, HEADER_REQUIRED.formatted(e.getHeaderName()));
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ProblemDetail handleTypeMismatch(MethodArgumentTypeMismatchException e) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Parameter '" + e.getName() + "' has invalid format");
+        return problem(HttpStatus.BAD_REQUEST, PARAMETER_INVALID.formatted(e.getName()));
     }
 
     @ExceptionHandler(LimitExceededException.class)
     public ProblemDetail handleLimitExceeded(LimitExceededException e) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.CONTENT_TOO_LARGE, e.getMessage());
+        return problem(HttpStatus.CONTENT_TOO_LARGE, e.getMessage());
+    }
+
+    private static ProblemDetail problem(HttpStatus status, String detail) {
+        return ProblemDetail.forStatusAndDetail(status, detail);
     }
 }

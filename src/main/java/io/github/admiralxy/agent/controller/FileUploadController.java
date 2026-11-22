@@ -13,12 +13,13 @@ import io.github.admiralxy.agent.controller.response.file.UploadSessionFileStatu
 import io.github.admiralxy.agent.controller.response.file.UploadStatusRs;
 import io.github.admiralxy.agent.domain.UploadSessionState;
 import io.github.admiralxy.agent.exception.InvalidFileException;
-import io.github.admiralxy.agent.service.EncryptedChunk;
-import io.github.admiralxy.agent.service.EncryptedPayload;
-import io.github.admiralxy.agent.service.UploadSessionService;
 import io.github.admiralxy.agent.service.file.Base64Content;
+import io.github.admiralxy.agent.service.file.EncryptedChunk;
+import io.github.admiralxy.agent.service.file.EncryptedPayload;
 import io.github.admiralxy.agent.service.file.UploadCrypto;
+import io.github.admiralxy.agent.service.file.UploadSessionService;
 import lombok.RequiredArgsConstructor;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -37,15 +38,23 @@ import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Encrypted chunked upload of folders packed into a .tar.zst archive.
- */
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/files/uploads")
 public class FileUploadController {
 
     static final String PROOF_HEADER = "X-Upload-Proof";
+
+    private static final String KEY_SALT_FIELD = "keySalt";
+    private static final String IV_FIELD = "iv";
+    private static final String DATA_FIELD = "data";
+    private static final String CHUNK_PREFIX = "chunks[%d].";
+    private static final String PROOF_PREFIX = PROOF_HEADER + ".";
+    private static final char PROOF_SEPARATOR = '.';
+    private static final String VERSION_INVALID = "Field 'version' must be %d";
+    private static final String CHUNKS_EMPTY = "Field 'chunks' must not be empty";
+    private static final String CHUNK_INDEXES_REQUIRED = "Fields '%1$sfileIndex' and '%1$schunkIndex' are required";
+    private static final String PROOF_INVALID = "Header '%s' must be '<base64 iv>.<base64 data>'";
 
     private final UploadSessionService uploadSessionService;
     private final UploadCrypto uploadCrypto;
@@ -62,12 +71,12 @@ public class FileUploadController {
                 uploads.getMaxBatchChunks(),
                 new UploadConfigRs.UploadEncryptionRs(
                         UploadCrypto.VERSION,
-                        "PBKDF2-SHA256",
+                        UploadCrypto.KDF,
                         uploadCrypto.kdfIterations(),
                         uploadCrypto.kdfSalt(),
-                        "HKDF-SHA256",
+                        UploadCrypto.HKDF,
                         UploadCrypto.HKDF_INFO,
-                        "AES-256-GCM",
+                        UploadCrypto.CIPHER_NAME,
                         UploadCrypto.KEY_SALT_LENGTH,
                         UploadCrypto.IV_LENGTH,
                         UploadCrypto.TAG_LENGTH
@@ -79,10 +88,11 @@ public class FileUploadController {
     @ResponseStatus(HttpStatus.CREATED)
     public CreateUploadRs create(@RequestBody CreateUploadRq rq) {
         if (rq.version() == null || rq.version() != UploadCrypto.VERSION) {
-            throw new InvalidFileException("Field 'version' must be " + UploadCrypto.VERSION);
+            throw new InvalidFileException(VERSION_INVALID.formatted(UploadCrypto.VERSION));
         }
-        byte[] keySalt = Base64Content.decodeField(rq.keySalt(), "keySalt");
-        UploadSessionState state = uploadSessionService.create(keySalt, payload(rq.iv(), rq.data(), ""));
+        byte[] keySalt = Base64Content.decodeField(rq.keySalt(), KEY_SALT_FIELD);
+        UploadSessionState state = uploadSessionService.create(keySalt, payload(rq.iv(), rq.data(),
+                StringUtils.EMPTY));
         return new CreateUploadRs(
                 state.session().id(),
                 state.session().chunkSize(),
@@ -101,21 +111,22 @@ public class FileUploadController {
             @PathVariable int chunkIndex,
             @RequestBody UploadChunkRq rq
     ) {
-        uploadSessionService.putChunk(uploadId, new EncryptedChunk(fileIndex, chunkIndex, payload(rq.iv(), rq.data(), "")));
+        uploadSessionService.putChunk(uploadId, new EncryptedChunk(fileIndex, chunkIndex,
+                payload(rq.iv(), rq.data(), StringUtils.EMPTY)));
     }
 
     @PostMapping("/{uploadId}/chunks")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void uploadChunks(@PathVariable UUID uploadId, @RequestBody UploadChunksRq rq) {
         if (rq.chunks() == null) {
-            throw new InvalidFileException("Field 'chunks' must not be empty");
+            throw new InvalidFileException(CHUNKS_EMPTY);
         }
         List<EncryptedChunk> chunks = new ArrayList<>(rq.chunks().size());
         for (int i = 0; i < rq.chunks().size(); i++) {
             UploadChunkItemRq item = rq.chunks().get(i);
-            String prefix = "chunks[" + i + "].";
+            String prefix = CHUNK_PREFIX.formatted(i);
             if (item == null || item.fileIndex() == null || item.chunkIndex() == null) {
-                throw new InvalidFileException("Fields '" + prefix + "fileIndex' and '" + prefix + "chunkIndex' are required");
+                throw new InvalidFileException(CHUNK_INDEXES_REQUIRED.formatted(prefix));
             }
             chunks.add(new EncryptedChunk(item.fileIndex(), item.chunkIndex(), payload(item.iv(), item.data(), prefix)));
         }
@@ -158,19 +169,16 @@ public class FileUploadController {
 
     private static EncryptedPayload payload(String iv, String data, String fieldPrefix) {
         return new EncryptedPayload(
-                Base64Content.decodeField(iv, fieldPrefix + "iv"),
-                Base64Content.decodeField(data, fieldPrefix + "data")
+                Base64Content.decodeField(iv, fieldPrefix + IV_FIELD),
+                Base64Content.decodeField(data, fieldPrefix + DATA_FIELD)
         );
     }
 
-    /**
-     * Proof format: {@code base64(iv).base64(ciphertext)}.
-     */
     private static EncryptedPayload parseProof(String proof) {
-        int dot = proof.indexOf('.');
+        int dot = proof.indexOf(PROOF_SEPARATOR);
         if (dot <= 0 || dot == proof.length() - 1) {
-            throw new InvalidFileException("Header '" + PROOF_HEADER + "' must be '<base64 iv>.<base64 data>'");
+            throw new InvalidFileException(PROOF_INVALID.formatted(PROOF_HEADER));
         }
-        return payload(proof.substring(0, dot), proof.substring(dot + 1), PROOF_HEADER + ".");
+        return payload(proof.substring(0, dot), proof.substring(dot + 1), PROOF_PREFIX);
     }
 }

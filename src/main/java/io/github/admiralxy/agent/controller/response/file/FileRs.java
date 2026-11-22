@@ -14,7 +14,6 @@ public record FileRs(
         long size,
         Instant createdAt
 ) {
-
     public static FileRs from(StoredFile file) {
         return new FileRs(
                 file.id(),

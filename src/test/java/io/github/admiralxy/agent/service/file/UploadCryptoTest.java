@@ -96,9 +96,6 @@ class UploadCryptoTest {
         return new UploadCrypto(properties, admin);
     }
 
-    /**
-     * Straightforward PBKDF2-HMAC-SHA256 (RFC 8018), first 32-byte block.
-     */
     private static byte[] referencePbkdf2(byte[] password, byte[] salt, int iterations) throws Exception {
         Mac mac = Mac.getInstance("HmacSHA256");
         mac.init(new SecretKeySpec(password, "HmacSHA256"));

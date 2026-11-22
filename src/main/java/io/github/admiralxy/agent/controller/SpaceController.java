@@ -3,7 +3,7 @@ package io.github.admiralxy.agent.controller;
 import io.github.admiralxy.agent.controller.request.space.CreateSpaceRq;
 import io.github.admiralxy.agent.controller.response.space.CreateSpaceRs;
 import io.github.admiralxy.agent.controller.response.space.GetSpacesRs;
-import io.github.admiralxy.agent.service.SpaceService;
+import io.github.admiralxy.agent.service.rag.SpaceService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;

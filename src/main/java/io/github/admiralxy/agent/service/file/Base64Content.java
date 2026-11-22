@@ -1,68 +1,61 @@
 package io.github.admiralxy.agent.service.file;
 
 import io.github.admiralxy.agent.exception.InvalidFileException;
+import org.apache.commons.lang3.StringUtils;
 
 import java.util.Base64;
 import java.util.regex.Pattern;
 
-/**
- * Parses base64 payloads sent by clients: plain base64 or a data URL ({@code data:<mime>;base64,<data>}).
- */
 public final class Base64Content {
 
     private static final String DATA_URL_PREFIX = "data:";
     private static final String BASE64_MARKER = ";base64,";
+    private static final String CONTENT_FIELD = "content";
+    private static final String FIELD_REQUIRED = "Field '%s' is required";
+    private static final String FIELD_NOT_BASE64 = "Field '%s' is not valid base64";
+    private static final String DATA_URL_WITHOUT_BASE64 = "Field 'content' is a data URL without base64 payload";
     private static final Pattern WHITESPACE = Pattern.compile("\\s");
+    private static final int BASE64_GROUP = 4;
+    private static final int BYTES_PER_GROUP = 3;
 
     private Base64Content() {
     }
 
-    /**
-     * Extracts the base64 payload, stripping a data URL prefix and whitespace.
-     */
     public static String payload(String content) {
-        if (content == null || content.isBlank()) {
-            throw new InvalidFileException("Field 'content' is required");
+        if (StringUtils.isBlank(content)) {
+            throw new InvalidFileException(FIELD_REQUIRED.formatted(CONTENT_FIELD));
         }
         String data = content;
         if (data.startsWith(DATA_URL_PREFIX)) {
             int markerIndex = data.indexOf(BASE64_MARKER);
             if (markerIndex < 0) {
-                throw new InvalidFileException("Field 'content' is a data URL without base64 payload");
+                throw new InvalidFileException(DATA_URL_WITHOUT_BASE64);
             }
             data = data.substring(markerIndex + BASE64_MARKER.length());
         }
-        return WHITESPACE.matcher(data).replaceAll("");
+        return WHITESPACE.matcher(data).replaceAll(StringUtils.EMPTY);
     }
 
-    /**
-     * Upper bound of the decoded size; lets callers reject oversized payloads before decoding.
-     */
     public static long estimateDecodedSize(String payload) {
-        return (long) payload.length() * 3 / 4;
+        return (long) payload.length() * BYTES_PER_GROUP / BASE64_GROUP;
     }
 
     public static byte[] decode(String payload) {
-        try {
-            return Base64.getDecoder().decode(payload);
-        } catch (IllegalArgumentException e) {
-            throw new InvalidFileException("Field 'content' is not valid base64");
-        }
+        return decodeOrFail(payload, CONTENT_FIELD);
     }
 
-    /**
-     * Decodes a required plain base64 field.
-     *
-     * @param field field name used in error messages
-     */
     public static byte[] decodeField(String value, String field) {
-        if (value == null || value.isEmpty()) {
-            throw new InvalidFileException("Field '" + field + "' is required");
+        if (StringUtils.isEmpty(value)) {
+            throw new InvalidFileException(FIELD_REQUIRED.formatted(field));
         }
+        return decodeOrFail(value, field);
+    }
+
+    private static byte[] decodeOrFail(String value, String field) {
         try {
             return Base64.getDecoder().decode(value);
         } catch (IllegalArgumentException e) {
-            throw new InvalidFileException("Field '" + field + "' is not valid base64");
+            throw new InvalidFileException(FIELD_NOT_BASE64.formatted(field));
         }
     }
 }

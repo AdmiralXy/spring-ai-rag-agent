@@ -6,7 +6,7 @@ import io.github.admiralxy.agent.controller.response.prompt.CreatePromptTemplate
 import io.github.admiralxy.agent.controller.response.prompt.GetPromptTemplatesRs;
 import io.github.admiralxy.agent.controller.response.prompt.UpdatePromptTemplateRs;
 import io.github.admiralxy.agent.domain.PromptTemplate;
-import io.github.admiralxy.agent.service.PromptTemplateService;
+import io.github.admiralxy.agent.service.prompt.PromptTemplateService;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 

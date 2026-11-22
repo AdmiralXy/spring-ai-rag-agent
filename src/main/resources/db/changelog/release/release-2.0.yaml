@@ -1,0 +1,19 @@
+databaseChangeLog:
+  - include:
+      file: db/changes/release/2.0/update-model-settings-tables.yaml
+  - include:
+      file: db/changes/release/2.0/update-spaces-table.yaml
+  - include:
+      file: db/changes/release/2.0/update-chats-table.yaml
+  - include:
+      file: db/changes/release/2.0/update-chat-messages-table.yaml
+  - include:
+      file: db/changes/release/2.0/update-prompt-templates-table.yaml
+  - include:
+      file: db/changes/release/2.0/update-documents-indexes.yaml
+  - include:
+      file: db/changes/release/2.0/add-files-tables.yaml
+  - include:
+      file: db/changes/release/2.0/add-upload-sessions-tables.yaml
+  - include:
+      file: db/changes/release/2.0/add-ai-session-tables.yaml

@@ -12,12 +12,12 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.UUID;
 
-/**
- * Disk storage for file bodies. Files are addressed by an opaque key relative to the storage directory.
- */
 @Slf4j
 @Component
 public class FileContentStore {
+
+    private static final String CANNOT_CREATE = "Cannot create file storage directory %s";
+    private static final String DELETE_FAILED = "Failed to delete stored file {}";
 
     private final Path root;
 
@@ -26,15 +26,10 @@ public class FileContentStore {
         try {
             Files.createDirectories(root);
         } catch (IOException e) {
-            throw new UncheckedIOException("Cannot create file storage directory " + root, e);
+            throw new UncheckedIOException(CANNOT_CREATE.formatted(root), e);
         }
     }
 
-    /**
-     * Moves the source file into the storage.
-     *
-     * @return storage key of the imported file
-     */
     public String importFile(Path source) throws IOException {
         String key = UUID.randomUUID().toString();
         Path target = root.resolve(key);
@@ -47,7 +42,6 @@ public class FileContentStore {
     }
 
     public Path resolve(String key) {
-        // Keys are always UUIDs; parsing guards against path traversal through corrupted data.
         return root.resolve(UUID.fromString(key).toString());
     }
 
@@ -55,7 +49,7 @@ public class FileContentStore {
         try {
             Files.deleteIfExists(resolve(key));
         } catch (IOException | IllegalArgumentException e) {
-            log.warn("Failed to delete stored file {}", key, e);
+            log.warn(DELETE_FAILED, key, e);
         }
     }
 }

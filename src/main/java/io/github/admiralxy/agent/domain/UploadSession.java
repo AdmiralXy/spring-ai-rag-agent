@@ -3,11 +3,6 @@ package io.github.admiralxy.agent.domain;
 import java.time.Instant;
 import java.util.UUID;
 
-/**
- * Upload session.
- *
- * @param keySalt random per-session salt used to derive the session encryption key
- */
 public record UploadSession(
         UUID id,
         String name,
@@ -17,7 +12,6 @@ public record UploadSession(
         Instant expiresAt,
         byte[] keySalt
 ) {
-
     public boolean isExpired(Instant now) {
         return !expiresAt.isAfter(now);
     }

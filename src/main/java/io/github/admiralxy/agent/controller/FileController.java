@@ -5,7 +5,7 @@ import io.github.admiralxy.agent.controller.response.file.FileRs;
 import io.github.admiralxy.agent.controller.response.file.GetFilesRs;
 import io.github.admiralxy.agent.domain.StoredFile;
 import io.github.admiralxy.agent.domain.StoredFileContent;
-import io.github.admiralxy.agent.service.FileStorageService;
+import io.github.admiralxy.agent.service.file.FileStorageService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.Resource;
 import org.springframework.http.ContentDisposition;
@@ -52,7 +52,6 @@ public class FileController {
                 .filename(file.fileName(), StandardCharsets.UTF_8)
                 .build();
 
-        // The body is streamed; Content-Length is set by the resource converter.
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(file.contentType()))
                 .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())

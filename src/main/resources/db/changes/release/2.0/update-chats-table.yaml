@@ -1,0 +1,113 @@
+databaseChangeLog:
+  - changeSet:
+      id: rename-conversations-table
+      author: AdmiralXy
+      changes:
+        - renameTable:
+            oldTableName: t_conversations
+            newTableName: t_chats
+        - addNotNullConstraint:
+            tableName: t_chats
+            columnName: c_title
+            columnDataType: text
+            defaultNullValue: ""
+        - modifyDataType:
+            tableName: t_chats
+            columnName: c_created_at
+            newDataType: timestamptz
+        - modifyDataType:
+            tableName: t_chats
+            columnName: c_updated_at
+            newDataType: timestamptz
+        - addDefaultValue:
+            tableName: t_chats
+            columnName: c_created_at
+            defaultValueComputed: now()
+        - addDefaultValue:
+            tableName: t_chats
+            columnName: c_updated_at
+            defaultValueComputed: now()
+        - addNotNullConstraint:
+            tableName: t_chats
+            columnName: c_created_at
+            columnDataType: timestamptz
+            defaultNullValue: now
+        - addNotNullConstraint:
+            tableName: t_chats
+            columnName: c_updated_at
+            columnDataType: timestamptz
+            defaultNullValue: now
+        - createIndex:
+            tableName: t_chats
+            indexName: idx_chats_updated_at
+            columns:
+              - column:
+                  name: c_updated_at
+                  descending: true
+
+  - changeSet:
+      id: replace-chat-model-name-with-model-id
+      author: AdmiralXy
+      changes:
+        - addColumn:
+            tableName: t_chats
+            columns:
+              - column:
+                  name: c_model_id
+                  type: uuid
+        - sql:
+            sql: >
+              UPDATE t_chats c SET c_model_id = m.c_id
+              FROM t_chat_models m
+              WHERE c.c_model_name = m.c_id::text
+                 OR lower(c.c_model_name) = lower(m.c_name)
+                 OR lower(c.c_model_name) = lower(m.c_label)
+        - addForeignKeyConstraint:
+            baseTableName: t_chats
+            baseColumnNames: c_model_id
+            referencedTableName: t_chat_models
+            referencedColumnNames: c_id
+            constraintName: fk_chats_chat_models
+            onDelete: SET NULL
+        - dropColumn:
+            tableName: t_chats
+            columnName: c_model_name
+
+  - changeSet:
+      id: add-chat-spaces-table
+      author: AdmiralXy
+      changes:
+        - createTable:
+            tableName: t_chat_spaces
+            columns:
+              - column:
+                  name: c_chat_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_chat_spaces_chats
+                    references: t_chats(c_id)
+                    deleteCascade: true
+              - column:
+                  name: c_space_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_chat_spaces_spaces
+                    references: t_spaces(c_id)
+                    deleteCascade: true
+        - addPrimaryKey:
+            tableName: t_chat_spaces
+            columnNames: c_chat_id, c_space_id
+            constraintName: pk_chat_spaces
+        - sql:
+            sql: >
+              INSERT INTO t_chat_spaces (c_chat_id, c_space_id)
+              SELECT DISTINCT c.c_id, s.c_id
+              FROM t_chats c
+              CROSS JOIN LATERAL unnest(string_to_array(c.c_rag_space, ',')) AS r(space_id)
+              JOIN t_spaces s ON s.c_id::text = trim(r.space_id)
+              WHERE c.c_rag_space IS NOT NULL
+        - dropColumn:
+            tableName: t_chats
+            columnName: c_rag_space

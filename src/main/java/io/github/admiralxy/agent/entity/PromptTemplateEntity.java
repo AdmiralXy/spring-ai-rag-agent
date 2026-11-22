@@ -8,7 +8,9 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.CreationTimestamp;
 
+import java.time.Instant;
 import java.util.UUID;
 
 @Entity
@@ -19,7 +21,7 @@ public class PromptTemplateEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
-    @Column(name = "c_id", updatable = false, nullable = false, columnDefinition = "uuid")
+    @Column(name = "c_id", updatable = false, nullable = false)
     private UUID id;
 
     @Column(name = "c_name", nullable = false)
@@ -27,4 +29,8 @@ public class PromptTemplateEntity {
 
     @Column(name = "c_content", nullable = false)
     private String content;
+
+    @CreationTimestamp
+    @Column(name = "c_created_at", nullable = false, updatable = false)
+    private Instant createdAt;
 }

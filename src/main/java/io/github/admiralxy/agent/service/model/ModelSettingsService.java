@@ -1,29 +1,30 @@
 package io.github.admiralxy.agent.service.model;
 
-import io.github.admiralxy.agent.entity.ChatModelSettingsEntity;
-import io.github.admiralxy.agent.entity.EmbeddingsModelSettingsEntity;
-import io.github.admiralxy.agent.entity.SummarizerModelSettingsEntity;
+import io.github.admiralxy.agent.entity.ChatModelEntity;
+import io.github.admiralxy.agent.entity.EmbeddingModelEntity;
+import io.github.admiralxy.agent.entity.SummarizerModelEntity;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 public interface ModelSettingsService {
 
-    List<ChatModelSettingsEntity> getChatModels();
+    List<ChatModelEntity> getChatModels();
 
-    ChatModelSettingsEntity getChatModel(UUID id);
+    ChatModelEntity getChatModel(UUID id);
 
-    ChatModelSettingsEntity createChatModel(ChatModelSettingsEntity entity);
+    ChatModelEntity createChatModel(Consumer<ChatModelEntity> settings);
 
-    ChatModelSettingsEntity updateChatModel(UUID id, ChatModelSettingsEntity entity);
+    ChatModelEntity updateChatModel(UUID id, Consumer<ChatModelEntity> settings);
 
     void deleteChatModel(UUID id);
 
-    EmbeddingsModelSettingsEntity getEmbeddingsModel();
+    EmbeddingModelEntity getEmbeddingModel();
 
-    EmbeddingsModelSettingsEntity updateEmbeddingsModel(EmbeddingsModelSettingsEntity entity);
+    EmbeddingModelEntity updateEmbeddingModel(Consumer<EmbeddingModelEntity> settings);
 
-    SummarizerModelSettingsEntity getSummarizerModel();
+    SummarizerModelEntity getSummarizerModel();
 
-    SummarizerModelSettingsEntity updateSummarizerModel(SummarizerModelSettingsEntity entity);
+    SummarizerModelEntity updateSummarizerModel(Consumer<SummarizerModelEntity> settings);
 }

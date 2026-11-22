@@ -15,6 +15,9 @@ public record ChatModelRs(
         String systemPrompt,
         int priority,
         double temperature,
-        int maxContextTokens
+        int maxContextTokens,
+        boolean thinking,
+        int maxOutputTokens,
+        boolean vision
 ) {
 }

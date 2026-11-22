@@ -1,8 +1,11 @@
 package io.github.admiralxy.agent.config;
 
+import io.github.admiralxy.agent.config.properties.OutboundProperties;
+import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.ai.anthropic.http.okhttp.AnthropicHttpClientBuilderCustomizer;
+import org.springframework.ai.openai.http.okhttp.OpenAiHttpClientBuilderCustomizer;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Component;
@@ -22,32 +25,52 @@ import java.security.cert.X509Certificate;
 @Component
 public class AiHttpClientBuilderFactory {
 
-    private static final TrustManager[] TRUST_ALL_MANAGERS = new TrustManager[]{new TrustAllX509TrustManager()};
+    private static final String TLS = "TLS";
+    private static final String SSL_CONTEXT_FAILED = "Unable to configure insecure SSL context";
+    private static final String NETTY_SSL_CONTEXT_FAILED = "Unable to configure insecure Netty SSL context";
+    private static final X509TrustManager TRUST_ALL_MANAGER = new TrustAllX509TrustManager();
+    private static final TrustManager[] TRUST_ALL_MANAGERS = new TrustManager[]{TRUST_ALL_MANAGER};
 
     private final boolean insecureSsl;
 
-    public AiHttpClientBuilderFactory(@Value("${app.outbound.insecure-ssl:false}") boolean insecureSsl) {
-        this.insecureSsl = insecureSsl;
+    public AiHttpClientBuilderFactory(OutboundProperties outboundProperties) {
+        this.insecureSsl = outboundProperties.isInsecureSsl();
     }
 
     public boolean isInsecureSslEnabled() {
         return insecureSsl;
     }
 
+    public OpenAiHttpClientBuilderCustomizer openAiHttpClientCustomizer() {
+        return builder -> {
+            if (insecureSsl) {
+                builder.sslSocketFactory(createInsecureSslContext().getSocketFactory())
+                        .trustManager(TRUST_ALL_MANAGER)
+                        .hostnameVerifier((hostname, session) -> true);
+            }
+        };
+    }
+
+    public AnthropicHttpClientBuilderCustomizer anthropicHttpClientCustomizer() {
+        return builder -> {
+            if (insecureSsl) {
+                builder.sslSocketFactory(createInsecureSslContext().getSocketFactory())
+                        .trustManager(TRUST_ALL_MANAGER)
+                        .hostnameVerifier((hostname, session) -> true);
+            }
+        };
+    }
+
     public RestClient.Builder createRestClientBuilder() {
         if (!insecureSsl) {
             return RestClient.builder();
         }
-
-        SSLContext sslContext = createInsecureSslContext();
         SSLParameters sslParameters = new SSLParameters();
         sslParameters.setEndpointIdentificationAlgorithm(null);
-
         java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
-                .sslContext(sslContext)
+                .sslContext(createInsecureSslContext())
                 .sslParameters(sslParameters)
                 .build();
-
         return RestClient.builder().requestFactory(new JdkClientHttpRequestFactory(client));
     }
 
@@ -55,7 +78,6 @@ public class AiHttpClientBuilderFactory {
         if (!insecureSsl) {
             return WebClient.builder();
         }
-
         HttpClient httpClient = HttpClient.create()
                 .secure(sslSpec -> sslSpec
                         .sslContext(createInsecureNettySslContext())
@@ -64,25 +86,24 @@ public class AiHttpClientBuilderFactory {
                             sslParameters.setEndpointIdentificationAlgorithm(null);
                             sslHandler.engine().setSSLParameters(sslParameters);
                         }));
-
         return WebClient.builder().clientConnector(new ReactorClientHttpConnector(httpClient));
     }
 
     private static SSLContext createInsecureSslContext() {
         try {
-            SSLContext sslContext = SSLContext.getInstance("TLS");
+            SSLContext sslContext = SSLContext.getInstance(TLS);
             sslContext.init(null, TRUST_ALL_MANAGERS, new SecureRandom());
             return sslContext;
-        } catch (GeneralSecurityException ex) {
-            throw new IllegalStateException("Unable to configure insecure SSL context", ex);
+        } catch (GeneralSecurityException e) {
+            throw new IllegalStateException(SSL_CONTEXT_FAILED, e);
         }
     }
 
-    private static io.netty.handler.ssl.SslContext createInsecureNettySslContext() {
+    private static SslContext createInsecureNettySslContext() {
         try {
             return SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
-        } catch (SSLException ex) {
-            throw new IllegalStateException("Unable to configure insecure Netty SSL context", ex);
+        } catch (SSLException e) {
+            throw new IllegalStateException(NETTY_SSL_CONTEXT_FAILED, e);
         }
     }
 

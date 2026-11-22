@@ -1,6 +1,6 @@
 package io.github.admiralxy.agent.controller;
 
-import io.github.admiralxy.agent.service.RagService;
+import io.github.admiralxy.agent.service.rag.RagService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -30,39 +30,30 @@ class RagControllerTest {
 
     @Test
     void subscribeToProgressCompletesWhenFluxSucceeds() throws IOException {
-        // GIVEN
         RagController ragController = new RagController(ragService, taskExecutor);
 
-        // WHEN
         ragController.subscribeToProgress(emitter, Flux.just(10, 100));
 
-        // THEN
         verify(emitter, times(2)).send(any(SseEmitter.SseEventBuilder.class));
         verify(emitter).complete();
     }
 
     @Test
     void subscribeToProgressCompletesWithErrorWhenFluxFails() {
-        // GIVEN
         RagController ragController = new RagController(ragService, taskExecutor);
 
-        // WHEN
         ragController.subscribeToProgress(emitter, Flux.error(new IllegalStateException("boom")));
 
-        // THEN
         verify(emitter).completeWithError(any(IllegalStateException.class));
     }
 
     @Test
     void subscribeToProgressCompletesWithErrorWhenSendFails() throws IOException {
-        // GIVEN
         RagController ragController = new RagController(ragService, taskExecutor);
         doThrow(new IOException("io failed")).when(emitter).send(any(SseEmitter.SseEventBuilder.class));
 
-        // WHEN
         ragController.subscribeToProgress(emitter, Flux.just(10));
 
-        // THEN
         verify(emitter).completeWithError(any(IllegalStateException.class));
     }
 }

@@ -6,81 +6,83 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 
-/**
- * Validation rules for relative paths of files inside an uploaded folder archive.
- * Error messages refer to files by index only: paths are confidential and must not appear in plaintext responses.
- */
 public final class UploadPathRules {
 
     public static final int MAX_PATH_LENGTH = 1024;
 
     private static final Pattern DRIVE_LETTER = Pattern.compile("^[A-Za-z]:");
     private static final Pattern CONTROL_CHARS = Pattern.compile("\\p{Cntrl}");
+    private static final Set<String> RELATIVE_SEGMENTS = Set.of(".", "..");
+    private static final String SEPARATOR = "/";
+    private static final char SEPARATOR_CHAR = '/';
+    private static final char WINDOWS_SEPARATOR = '\\';
+    private static final String FIELD = "Field 'files[%d].path'";
+    private static final String REQUIRED = "%s is required";
+    private static final String TOO_LONG = "%s must be at most %d characters";
+    private static final String CONTROL = "%s must not contain control characters";
+    private static final String ABSOLUTE = "%s must be relative, not start with '/'";
+    private static final String DRIVE = "%s must not start with a drive letter";
+    private static final String EMPTY_SEGMENT = "%s must not contain empty segments";
+    private static final String DOT_SEGMENT = "%s must not contain '.' or '..' segments";
+    private static final String DUPLICATE = "%s duplicates 'files[%d].path' (case-insensitive)";
+    private static final String FILE_AS_FOLDER = "%s uses 'files[%d].path' as a folder, but it is a file";
 
     private UploadPathRules() {
     }
 
-    /**
-     * Normalizes separators to {@code /} and rejects absolute or unsafe paths.
-     *
-     * @param index position of the file in the request, used in error messages
-     */
     public static String normalize(String rawPath, int index) {
-        String field = field(index);
+        String field = FIELD.formatted(index);
         if (rawPath == null || rawPath.isEmpty()) {
-            throw new InvalidFileException(field + " is required");
+            throw invalid(REQUIRED, field);
         }
-        String path = rawPath.replace('\\', '/');
+        String path = rawPath.replace(WINDOWS_SEPARATOR, SEPARATOR_CHAR);
         if (path.length() > MAX_PATH_LENGTH) {
-            throw new InvalidFileException(field + " must be at most " + MAX_PATH_LENGTH + " characters");
+            throw new InvalidFileException(TOO_LONG.formatted(field, MAX_PATH_LENGTH));
         }
         if (CONTROL_CHARS.matcher(path).find()) {
-            throw new InvalidFileException(field + " must not contain control characters");
+            throw invalid(CONTROL, field);
         }
-        if (path.startsWith("/")) {
-            throw new InvalidFileException(field + " must be relative, not start with '/'");
+        if (path.startsWith(SEPARATOR)) {
+            throw invalid(ABSOLUTE, field);
         }
         if (DRIVE_LETTER.matcher(path).find()) {
-            throw new InvalidFileException(field + " must not start with a drive letter");
+            throw invalid(DRIVE, field);
         }
-        for (String segment : path.split("/", -1)) {
+        for (String segment : path.split(SEPARATOR, -1)) {
             if (segment.isEmpty()) {
-                throw new InvalidFileException(field + " must not contain empty segments");
+                throw invalid(EMPTY_SEGMENT, field);
             }
-            if (".".equals(segment) || "..".equals(segment)) {
-                throw new InvalidFileException(field + " must not contain '.' or '..' segments");
+            if (RELATIVE_SEGMENTS.contains(segment)) {
+                throw invalid(DOT_SEGMENT, field);
             }
         }
         return path;
     }
 
-    /**
-     * Rejects case-insensitive duplicates and paths where a file is also used as a folder.
-     *
-     * @param paths normalized paths in request order
-     */
     public static void checkConflicts(List<String> paths) {
         Map<String, Integer> files = new HashMap<>();
         for (int i = 0; i < paths.size(); i++) {
             Integer previous = files.putIfAbsent(paths.get(i).toLowerCase(Locale.ROOT), i);
             if (previous != null) {
-                throw new InvalidFileException(field(i) + " duplicates 'files[" + previous + "].path' (case-insensitive)");
+                throw new InvalidFileException(DUPLICATE.formatted(FIELD.formatted(i), previous));
             }
         }
         for (int i = 0; i < paths.size(); i++) {
             String lower = paths.get(i).toLowerCase(Locale.ROOT);
-            for (int slash = lower.indexOf('/'); slash > 0; slash = lower.indexOf('/', slash + 1)) {
+            for (int slash = lower.indexOf(SEPARATOR_CHAR); slash > 0;
+                 slash = lower.indexOf(SEPARATOR_CHAR, slash + 1)) {
                 Integer parent = files.get(lower.substring(0, slash));
                 if (parent != null) {
-                    throw new InvalidFileException(field(i) + " uses 'files[" + parent + "].path' as a folder, but it is a file");
+                    throw new InvalidFileException(FILE_AS_FOLDER.formatted(FIELD.formatted(i), parent));
                 }
             }
         }
     }
 
-    private static String field(int index) {
-        return "Field 'files[" + index + "].path'";
+    private static InvalidFileException invalid(String template, String field) {
+        return new InvalidFileException(template.formatted(field));
     }
 }

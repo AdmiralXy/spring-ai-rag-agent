@@ -14,10 +14,6 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
-/**
- * Stored file. The body is kept either inline in {@code content} (small files from POST /files)
- * or on disk under {@code storagePath} (archives); exactly one of them is set.
- */
 @Entity
 @Table(name = "t_files")
 @Getter
@@ -53,7 +49,6 @@ public class StoredFileEntity {
     @PrePersist
     void onCreate() {
         if (createdAt == null) {
-            // Postgres timestamptz stores microseconds, so keep the in-memory value identical to the stored one.
             createdAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
         }
     }

@@ -1,9 +1,10 @@
 package io.github.admiralxy.agent.service.provider.impl;
 
-import io.github.admiralxy.agent.controller.response.documents.ProviderType;
-import io.github.admiralxy.agent.service.TextChunkerService;
+import io.github.admiralxy.agent.config.properties.RagProperties;
+import io.github.admiralxy.agent.domain.ProviderType;
 import io.github.admiralxy.agent.service.provider.RagChunk;
 import io.github.admiralxy.agent.service.provider.RagContentRequest;
+import io.github.admiralxy.agent.service.rag.TextChunkerService;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import reactor.test.StepVerifier;
@@ -13,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TextRagContentProviderTest {
 
-    private final TextRagContentProvider provider = new TextRagContentProvider(noOpChunker());
+    private final TextRagContentProvider provider = new TextRagContentProvider(noOpChunker(), new RagProperties());
 
     @Test
     void supportsTextOnly() {

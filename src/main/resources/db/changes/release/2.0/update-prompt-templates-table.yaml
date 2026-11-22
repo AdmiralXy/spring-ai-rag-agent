@@ -1,0 +1,14 @@
+databaseChangeLog:
+  - changeSet:
+      id: add-prompt-templates-created-at
+      author: AdmiralXy
+      changes:
+        - addColumn:
+            tableName: t_prompt_templates
+            columns:
+              - column:
+                  name: c_created_at
+                  type: timestamptz
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false

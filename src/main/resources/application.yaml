@@ -9,31 +9,37 @@ app:
   chat:
     history-limit: 20
     rag:
-      percentage: 30
-      top-k: 100
+      percentage: ${RAG_PERCENTAGE:30}
+      max-tokens: ${RAG_MAX_TOKENS:24000}
+      top-k: ${RAG_TOP_K:40}
+      keyword-weight: ${RAG_KEYWORD_WEIGHT:0.6}
+      expand-top-hits: ${RAG_EXPAND_TOP_HITS:3}
+      chunking:
+        max-chars: ${RAG_CHUNK_MAX_CHARS:2000}
+        max-lines: ${RAG_CHUNK_MAX_LINES:60}
+        overlap-lines: ${RAG_CHUNK_OVERLAP_LINES:5}
+        overlap-words: ${RAG_CHUNK_OVERLAP_WORDS:40}
   files:
-    # Max decoded size for POST /files
     max-size: ${FILES_MAX_SIZE:1000MB}
-    # Directory for file bodies stored on disk
     storage-dir: ${FILES_STORAGE_DIR:storage/files}
     uploads:
       chunk-size: ${FILES_UPLOADS_CHUNK_SIZE:50MB}
       max-total-size: ${FILES_UPLOADS_MAX_TOTAL_SIZE:500MB}
       max-files: ${FILES_UPLOADS_MAX_FILES:10000}
       max-batch-chunks: ${FILES_UPLOADS_MAX_BATCH_CHUNKS:1000}
-      # Max JSON body for /files/uploads/** requests
       max-request-size: ${FILES_UPLOADS_MAX_REQUEST_SIZE:70MB}
       encryption:
-        # The encryption password is the admin password
         kdf-salt: ${FILES_UPLOADS_KDF_SALT:274db9f7fff00700cd90c9b5585b12ad}
         kdf-iterations: ${FILES_UPLOADS_KDF_ITERATIONS:600000}
-      # Session expires after this period without chunk uploads.
       ttl: ${FILES_UPLOADS_TTL:PT24H}
       temp-dir: ${FILES_UPLOADS_TEMP_DIR:storage/uploads}
       cleanup-interval: ${FILES_UPLOADS_CLEANUP_INTERVAL:PT15M}
+  agent-runner:
+    url: ${AGENT_RUNNER_URL:http://localhost:8787}
+    secret: ${AGENT_RUNNER_SECRET:}
+    max-turns: ${AGENT_RUNNER_MAX_TURNS:100}
   security:
     admin:
-      # Master password
       password: ${ADMIN_PASSWORD:dev}
 
 spring:
@@ -54,6 +60,7 @@ spring:
       embedding: none
       image: none
       moderation: none
+      decision: none
       audio:
         speech: none
         transcription: none

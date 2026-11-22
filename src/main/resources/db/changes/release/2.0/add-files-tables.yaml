@@ -1,0 +1,59 @@
+databaseChangeLog:
+  - changeSet:
+      id: add-files-table
+      author: AdmiralXy
+      changes:
+        - createTable:
+            tableName: t_files
+            columns:
+              - column:
+                  name: c_id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: c_name
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_extension
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_content_type
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_size
+                  type: bigint
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_content
+                  type: bytea
+              - column:
+                  name: c_storage_path
+                  type: text
+              - column:
+                  name: c_created_at
+                  type: timestamptz
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - sql:
+            sql: >
+              ALTER TABLE t_files ADD CONSTRAINT ck_files_content_location
+              CHECK ((c_content IS NULL) <> (c_storage_path IS NULL))
+        - createIndex:
+            tableName: t_files
+            indexName: idx_files_created_at
+            columns:
+              - column:
+                  name: c_created_at
+                  descending: true
+              - column:
+                  name: c_id
+                  descending: true

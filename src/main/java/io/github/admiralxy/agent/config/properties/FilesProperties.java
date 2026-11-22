@@ -15,55 +15,52 @@ import java.time.Duration;
 @Setter
 public class FilesProperties implements InitializingBean {
 
-    /**
-     * Reserve for JSON syntax, field names and the IV around an encrypted base64 chunk.
-     */
     private static final long REQUEST_OVERHEAD_BYTES = 1024;
-
-    /**
-     * AES-GCM authentication tag appended to every ciphertext.
-     */
     private static final long GCM_TAG_BYTES = 16;
+    private static final int BASE64_GROUP = 4;
+    private static final int BYTES_PER_GROUP = 3;
+    private static final String DEFAULT_STORAGE_DIR = "storage/files";
+    private static final String CHUNK_SIZE_INVALID = "app.files.uploads.chunk-size must be positive";
+    private static final String MAX_FILES_INVALID = "app.files.uploads.max-files must be positive";
+    private static final String MAX_BATCH_INVALID = "app.files.uploads.max-batch-chunks must be positive";
+    private static final String MAX_REQUEST_TOO_SMALL = "app.files.uploads.max-request-size must be at least %d "
+            + "bytes to fit an encrypted base64 chunk of %d bytes";
+    private static final String KDF_SALT_EMPTY = "app.files.uploads.encryption.kdf-salt must not be empty";
+    private static final String KDF_ITERATIONS_INVALID =
+            "app.files.uploads.encryption.kdf-iterations must be at least %d";
 
     /**
-     * Max decoded size of a file uploaded via POST /files.
+     * Max decoded size of a file uploaded with {@code POST /files}.
      */
     private DataSize maxSize = DataSize.ofMegabytes(10);
 
     /**
      * Directory for file bodies stored on disk.
      */
-    private String storageDir = "storage/files";
+    private String storageDir = DEFAULT_STORAGE_DIR;
 
     /**
-     * Chunked folder uploads.
+     * Encrypted chunked folder uploads.
      */
     private Uploads uploads = new Uploads();
 
     @Override
     public void afterPropertiesSet() {
         long chunk = uploads.chunkSize.toBytes();
-        if (chunk <= 0) {
-            throw new IllegalStateException("app.files.uploads.chunk-size must be positive");
-        }
-        if (uploads.maxFiles <= 0) {
-            throw new IllegalStateException("app.files.uploads.max-files must be positive");
-        }
-        if (uploads.maxBatchChunks <= 0) {
-            throw new IllegalStateException("app.files.uploads.max-batch-chunks must be positive");
-        }
-        long minRequest = (chunk + GCM_TAG_BYTES + 2) / 3 * 4 + REQUEST_OVERHEAD_BYTES;
-        if (uploads.maxRequestSize.toBytes() < minRequest) {
-            throw new IllegalStateException("app.files.uploads.max-request-size must be at least " + minRequest
-                    + " bytes to fit an encrypted base64 chunk of " + chunk + " bytes");
-        }
+        require(chunk > 0, CHUNK_SIZE_INVALID);
+        require(uploads.maxFiles > 0, MAX_FILES_INVALID);
+        require(uploads.maxBatchChunks > 0, MAX_BATCH_INVALID);
+        long minRequest = (chunk + GCM_TAG_BYTES + 2) / BYTES_PER_GROUP * BASE64_GROUP + REQUEST_OVERHEAD_BYTES;
+        require(uploads.maxRequestSize.toBytes() >= minRequest, MAX_REQUEST_TOO_SMALL.formatted(minRequest, chunk));
         Encryption encryption = uploads.encryption;
-        if (encryption.kdfSalt == null || encryption.kdfSalt.isEmpty()) {
-            throw new IllegalStateException("app.files.uploads.encryption.kdf-salt must not be empty");
-        }
-        if (encryption.kdfIterations < Encryption.MIN_KDF_ITERATIONS) {
-            throw new IllegalStateException("app.files.uploads.encryption.kdf-iterations must be at least "
-                    + Encryption.MIN_KDF_ITERATIONS);
+        require(encryption.kdfSalt != null && !encryption.kdfSalt.isEmpty(), KDF_SALT_EMPTY);
+        require(encryption.kdfIterations >= Encryption.MIN_KDF_ITERATIONS,
+                KDF_ITERATIONS_INVALID.formatted(Encryption.MIN_KDF_ITERATIONS));
+    }
+
+    private static void require(boolean condition, String message) {
+        if (!condition) {
+            throw new IllegalStateException(message);
         }
     }
 
@@ -71,18 +68,20 @@ public class FilesProperties implements InitializingBean {
     @Setter
     public static class Uploads {
 
+        private static final String DEFAULT_TEMP_DIR = "storage/uploads";
+
         /**
-         * Size of a decoded chunk.
+         * Decoded size of one chunk.
          */
         private DataSize chunkSize = DataSize.ofMegabytes(5);
 
         /**
-         * Max total decoded size of all files in one session.
+         * Max total decoded size of all files of one upload.
          */
         private DataSize maxTotalSize = DataSize.ofMegabytes(500);
 
         /**
-         * Max number of files in one session.
+         * Max number of files of one upload.
          */
         private int maxFiles = 10_000;
 
@@ -92,27 +91,27 @@ public class FilesProperties implements InitializingBean {
         private int maxBatchChunks = 1000;
 
         /**
-         * Max JSON request body size for upload endpoints.
+         * Max JSON body of {@code /files/uploads/**} requests.
          */
         private DataSize maxRequestSize = DataSize.ofMegabytes(7);
 
         /**
-         * Session lifetime without activity.
+         * An upload expires after this period without chunks.
          */
         private Duration ttl = Duration.ofHours(24);
 
         /**
-         * Directory for temporary chunks.
+         * Directory for chunks of uploads in progress.
          */
-        private String tempDir = "storage/uploads";
+        private String tempDir = DEFAULT_TEMP_DIR;
 
         /**
-         * Interval of the expired sessions cleanup job.
+         * Interval of the cleanup of expired uploads.
          */
         private Duration cleanupInterval = Duration.ofMinutes(15);
 
         /**
-         * Application-level encryption of upload requests.
+         * Encryption of upload requests; the password is the admin password.
          */
         private Encryption encryption = new Encryption();
     }
@@ -123,10 +122,12 @@ public class FilesProperties implements InitializingBean {
 
         static final int MIN_KDF_ITERATIONS = 1;
 
+        private static final String DEFAULT_KDF_SALT = "default-kdf-salt";
+
         /**
-         * PBKDF2 salt (UTF-8 string), public; published to clients via GET /files/uploads/config.
+         * Public PBKDF2 salt (UTF-8 string), published to clients by {@code GET /files/uploads/config}.
          */
-        private String kdfSalt = "default-kdf-salt";
+        private String kdfSalt = DEFAULT_KDF_SALT;
 
         /**
          * PBKDF2-HMAC-SHA256 iterations.

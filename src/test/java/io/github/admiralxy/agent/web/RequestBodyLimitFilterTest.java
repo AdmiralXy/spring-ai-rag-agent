@@ -40,7 +40,6 @@ class RequestBodyLimitFilterTest {
         MockHttpServletRequest request = new MockHttpServletRequest("PUT", "/files/uploads/x");
         request.setContent(body);
         if (!declareLength) {
-            // MockHttpServletRequest derives Content-Length from content; simulate chunked transfer encoding.
             request = new MockHttpServletRequest("PUT", "/files/uploads/x") {
                 @Override
                 public long getContentLengthLong() {

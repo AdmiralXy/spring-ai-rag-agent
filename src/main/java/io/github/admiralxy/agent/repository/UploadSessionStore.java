@@ -9,9 +9,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-/**
- * Persistence of upload sessions and their file lists. Received chunks are tracked on disk, not here.
- */
 public interface UploadSessionStore {
 
     void create(UploadSession session, List<UploadSessionFile> files);
@@ -20,16 +17,8 @@ public interface UploadSessionStore {
 
     Optional<UploadSessionFile> findFile(UUID id, int fileIndex);
 
-    /**
-     * @return files ordered by index
-     */
     List<UploadSessionFile> findFiles(UUID id);
 
-    /**
-     * Extends the expiration of an active, not yet expired session.
-     *
-     * @return false if the session is missing, expired or not active
-     */
     boolean touch(UUID id, Instant now, Instant expiresAt);
 
     boolean updateStatus(UUID id, UploadSessionStatus status, Instant expiresAt);

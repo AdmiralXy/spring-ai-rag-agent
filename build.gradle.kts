@@ -4,7 +4,7 @@ import cz.habarta.typescript.generator.TypeScriptOutputKind
 plugins {
     java
     checkstyle
-    id("org.springframework.boot") version "4.0.3"
+    id("org.springframework.boot") version "4.2.0"
     id("io.spring.dependency-management") version "1.1.7"
     id("cz.habarta.typescript-generator") version "3.2.1263"
     id("com.google.cloud.tools.jib") version "3.5.3"
@@ -22,11 +22,9 @@ java {
 
 repositories {
     mavenCentral()
-    maven("https://repo.spring.io/snapshot")
-    maven("https://repo.spring.io/milestone")
 }
 
-extra["springAiVersion"] = "2.0.0-M2"
+extra["springAiVersion"] = "2.1.0"
 
 dependencies {
     // Spring Boot
@@ -40,6 +38,8 @@ dependencies {
     implementation("org.springframework.ai:spring-ai-starter-model-openai")
     implementation("org.springframework.ai:spring-ai-anthropic")
     implementation("org.springframework.ai:spring-ai-starter-vector-store-pgvector")
+    implementation("org.springframework.ai:spring-ai-session-jdbc")
+    implementation("org.springframework.ai:spring-ai-session-advisor")
     implementation("com.knuddels:jtokkit:1.1.0")
 
     // Database
@@ -60,6 +60,7 @@ dependencies {
     // Lombok
     compileOnly("org.projectlombok:lombok:1.18.42")
     annotationProcessor("org.projectlombok:lombok:1.18.42")
+    annotationProcessor("org.springframework.boot:spring-boot-configuration-processor")
 
     // Tests
     testImplementation("org.springframework.boot:spring-boot-starter-test")

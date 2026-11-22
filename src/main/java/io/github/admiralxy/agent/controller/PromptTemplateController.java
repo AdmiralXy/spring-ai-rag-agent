@@ -5,7 +5,7 @@ import io.github.admiralxy.agent.controller.request.prompt.UpdatePromptTemplateR
 import io.github.admiralxy.agent.controller.response.prompt.CreatePromptTemplateRs;
 import io.github.admiralxy.agent.controller.response.prompt.GetPromptTemplatesRs;
 import io.github.admiralxy.agent.controller.response.prompt.UpdatePromptTemplateRs;
-import io.github.admiralxy.agent.service.PromptTemplateService;
+import io.github.admiralxy.agent.service.prompt.PromptTemplateService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;

@@ -1,0 +1,99 @@
+databaseChangeLog:
+  - changeSet:
+      id: rename-model-settings-tables
+      author: AdmiralXy
+      changes:
+        - renameTable:
+            oldTableName: t_chat_model_settings
+            newTableName: t_chat_models
+        - renameTable:
+            oldTableName: t_embeddings_model_settings
+            newTableName: t_embedding_model
+        - renameTable:
+            oldTableName: t_summarizer_model_settings
+            newTableName: t_summarizer_model
+
+  - changeSet:
+      id: update-chat-models-table
+      author: AdmiralXy
+      changes:
+        - addColumn:
+            tableName: t_chat_models
+            columns:
+              - column:
+                  name: c_thinking
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_max_output_tokens
+                  type: int
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: c_vision
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+        - addDefaultValue:
+            tableName: t_chat_models
+            columnName: c_base_url
+            defaultValue: ""
+        - modifyDataType:
+            tableName: t_chat_models
+            columnName: c_created_at
+            newDataType: timestamptz
+        - modifyDataType:
+            tableName: t_chat_models
+            columnName: c_updated_at
+            newDataType: timestamptz
+        - addDefaultValue:
+            tableName: t_chat_models
+            columnName: c_created_at
+            defaultValueComputed: now()
+        - addDefaultValue:
+            tableName: t_chat_models
+            columnName: c_updated_at
+            defaultValueComputed: now()
+        - createIndex:
+            tableName: t_chat_models
+            indexName: idx_chat_models_priority
+            columns:
+              - column:
+                  name: c_priority
+              - column:
+                  name: c_created_at
+
+  - changeSet:
+      id: update-singleton-model-tables
+      author: AdmiralXy
+      changes:
+        - dropColumn:
+            tableName: t_embedding_model
+            columnName: c_created_at
+        - dropColumn:
+            tableName: t_summarizer_model
+            columnName: c_created_at
+        - modifyDataType:
+            tableName: t_embedding_model
+            columnName: c_updated_at
+            newDataType: timestamptz
+        - modifyDataType:
+            tableName: t_summarizer_model
+            columnName: c_updated_at
+            newDataType: timestamptz
+        - addDefaultValue:
+            tableName: t_embedding_model
+            columnName: c_updated_at
+            defaultValueComputed: now()
+        - addDefaultValue:
+            tableName: t_summarizer_model
+            columnName: c_updated_at
+            defaultValueComputed: now()
+        - sql:
+            sql: >
+              ALTER TABLE t_embedding_model ADD CONSTRAINT ck_embedding_model_singleton CHECK (c_id = 1);
+              ALTER TABLE t_summarizer_model ADD CONSTRAINT ck_summarizer_model_singleton CHECK (c_id = 1);

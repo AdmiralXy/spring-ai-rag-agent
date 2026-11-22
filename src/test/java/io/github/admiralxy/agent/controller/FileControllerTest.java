@@ -5,7 +5,7 @@ import io.github.admiralxy.agent.controller.response.file.FileRs;
 import io.github.admiralxy.agent.controller.response.file.GetFilesRs;
 import io.github.admiralxy.agent.domain.StoredFile;
 import io.github.admiralxy.agent.domain.StoredFileContent;
-import io.github.admiralxy.agent.service.FileStorageService;
+import io.github.admiralxy.agent.service.file.FileStorageService;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.core.io.ByteArrayResource;

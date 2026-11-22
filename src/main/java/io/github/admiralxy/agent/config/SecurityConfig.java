@@ -17,27 +17,30 @@ import org.springframework.security.web.SecurityFilterChain;
 @Configuration
 public class SecurityConfig {
 
+    private static final String ALL_PATHS = "/**";
+    private static final String SETTINGS_PATHS = "/settings/models/**";
+    private static final String PLAIN_PASSWORD = "{noop}";
+    private static final String ADMIN_ROLE = "SETTINGS_ADMIN";
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) {
         http.csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        .requestMatchers("/settings/models/**").authenticated()
+                        .requestMatchers(HttpMethod.OPTIONS, ALL_PATHS).permitAll()
+                        .requestMatchers(SETTINGS_PATHS).authenticated()
                         .anyRequest().permitAll()
                 )
                 .httpBasic(Customizer.withDefaults());
-
         return http.build();
     }
 
     @Bean
     public UserDetailsService userDetailsService(AdminProperties adminProperties) {
         UserDetails user = User.withUsername(AdminProperties.USERNAME)
-                .password("{noop}" + adminProperties.getPassword())
-                .roles("SETTINGS_ADMIN")
+                .password(PLAIN_PASSWORD + adminProperties.getPassword())
+                .roles(ADMIN_ROLE)
                 .build();
-
         return new InMemoryUserDetailsManager(user);
     }
 }

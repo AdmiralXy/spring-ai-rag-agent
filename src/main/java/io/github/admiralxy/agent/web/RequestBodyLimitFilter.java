@@ -16,10 +16,6 @@ import java.io.InputStreamReader;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 
-/**
- * Limits the request body size. The limit is enforced while the body is read, so the error is raised
- * inside the MVC pipeline and rendered by the controller advice (with CORS headers in place) as 413.
- */
 public class RequestBodyLimitFilter extends OncePerRequestFilter {
 
     private final long maxBytes;
@@ -61,7 +57,6 @@ public class RequestBodyLimitFilter extends OncePerRequestFilter {
     }
 
     static final class LimitedInputStream extends ServletInputStream {
-
         private final ServletInputStream delegate;
         private final long maxBytes;
         private final long declaredLength;

@@ -1,9 +1,9 @@
 package io.github.admiralxy.agent.controller.response.settings;
 
-import io.github.admiralxy.agent.entity.EmbeddingModelProviderType;
+import io.github.admiralxy.agent.entity.EmbeddingModelProvider;
 
 public record EmbeddingsModelRs(
-        EmbeddingModelProviderType provider,
+        EmbeddingModelProvider provider,
         String baseUrl,
         String apiKey,
         String name,

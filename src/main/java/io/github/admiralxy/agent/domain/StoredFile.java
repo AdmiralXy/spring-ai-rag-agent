@@ -5,7 +5,9 @@ import java.util.UUID;
 
 public record StoredFile(UUID id, String name, String extension, String contentType, long size, Instant createdAt) {
 
+    private static final String FILE_NAME = "%s.%s";
+
     public String fileName() {
-        return name + "." + extension;
+        return FILE_NAME.formatted(name, extension);
     }
 }
