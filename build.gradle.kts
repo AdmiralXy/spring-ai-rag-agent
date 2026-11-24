@@ -78,7 +78,8 @@ jib {
             image = "eclipse-temurin:25-jre-alpine"
         }
         jvmFlags = listOf(
-            "-XX:+UseZGC"
+            "-XX:+UseZGC",
+            "-XX:+ExitOnOutOfMemoryError"
         )
     }
 }

@@ -24,8 +24,8 @@ public class SecurityConfig {
 
     private static final String ALL_PATHS = "/**";
     private static final String[] PUBLIC_PATHS = {
-        "/auth/login", "/auth/register", "/auth/config", "/actuator/health", "/api-docs/**", "/swagger-ui/**",
-        "/swagger-ui.html"
+        "/auth/login", "/auth/register", "/auth/config", "/actuator/health", "/actuator/health/**",
+        "/api-docs/**", "/swagger-ui/**", "/swagger-ui.html"
     };
     private static final String UNAUTHORIZED_BODY =
             "{\"status\":401,\"title\":\"Unauthorized\",\"detail\":\"Sign in to continue\"}";

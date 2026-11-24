@@ -76,6 +76,12 @@ spring:
         speech: none
         transcription: none
 
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
 springdoc:
   api-docs:
     path: /api-docs

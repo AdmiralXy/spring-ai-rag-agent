@@ -15,4 +15,5 @@ WORKDIR /app
 COPY --from=builder /workspace/build/libs/*.jar /app/app.jar
 
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3   CMD wget -q -O /dev/null http://127.0.0.1:8080/api/agent/actuator/health/liveness || exit 1
+ENTRYPOINT ["java", "-XX:+ExitOnOutOfMemoryError", "-jar", "/app/app.jar"]
